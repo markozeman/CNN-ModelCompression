@@ -315,57 +315,63 @@ if __name__ == '__main__':
     num_of_units = 1024
     num_of_classes = 10
 
-    num_of_tasks = 5       # todo - change to 50
+    num_of_tasks = 20       # todo - change to 50
     num_of_epochs = 10
     batch_size = 600
 
     start_time = time.time()
 
-    '''
-    Normal training
-    '''
-    # X_train, y_train, X_test, y_test = get_MNIST()
-    # y_train = to_categorical(y_train, num_classes=num_of_classes)   # one-hot encode
-    # y_test = to_categorical(y_test, num_classes=num_of_classes)     # one-hot encode
-    #
-    # # normalize input images to have values between 0 and 1
-    # X_train = X_train.astype(dtype=np.float64)
-    # X_test = X_test.astype(dtype=np.float64)
-    # X_train /= 255
-    # X_test /= 255
-    #
-    # model = simple_model(input_size, num_of_units, num_of_classes)
-    #
-    # acc_normal = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, batch_size)
-    # print('\nTime elapsed: ', round(time.time() - start_time), 's')
-    # plot_lr(lr_over_time)
-    # plot_accuracies_over_time(acc_normal, np.zeros(len(acc_normal)))
+    train_normal = True
+    train_superposition = True
 
-    '''
-    Superposition training
-    '''
-    lr_over_time = []   # re-initiate learning rate
-    X_train, y_train, X_test, y_test = get_MNIST()
-    y_train = to_categorical(y_train, num_classes=num_of_classes)  # one-hot encode
-    y_test = to_categorical(y_test, num_classes=num_of_classes)  # one-hot encode
+    if train_normal:
+        X_train, y_train, X_test, y_test = get_MNIST()
+        y_train = to_categorical(y_train, num_classes=num_of_classes)   # one-hot encode
+        y_test = to_categorical(y_test, num_classes=num_of_classes)     # one-hot encode
 
-    # normalize input images to have values between 0 and 1
-    X_train = X_train.astype(dtype=np.float64)
-    X_test = X_test.astype(dtype=np.float64)
-    X_train /= 255
-    X_test /= 255
+        # normalize input images to have values between 0 and 1
+        X_train = X_train.astype(dtype=np.float64)
+        X_test = X_test.astype(dtype=np.float64)
+        X_train /= 255
+        X_test /= 255
 
-    model = simple_model(input_size, num_of_units, num_of_classes)
+        model = simple_model(input_size, num_of_units, num_of_classes)
 
-    acc_superposition = superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units, num_of_classes, num_of_tasks, batch_size)
-    # print('\nTime elapsed: ', round(time.time() - start_time), 's')
-    # plot_lr(lr_over_time)
-    plot_accuracies_over_time(np.zeros(len(acc_superposition)), acc_superposition)
+        acc_normal = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, batch_size)
 
-    # plot_accuracies_over_time(acc_normal, acc_superposition)
+        if not train_superposition:
+            plot_lr(lr_over_time)
+            plot_accuracies_over_time(acc_normal, np.zeros(len(acc_normal)))
+
+    if train_superposition:
+        lr_over_time = []  # re-initiate learning rate
+        X_train, y_train, X_test, y_test = get_MNIST()
+        y_train = to_categorical(y_train, num_classes=num_of_classes)  # one-hot encode
+        y_test = to_categorical(y_test, num_classes=num_of_classes)  # one-hot encode
+
+        # normalize input images to have values between 0 and 1
+        X_train = X_train.astype(dtype=np.float64)
+        X_test = X_test.astype(dtype=np.float64)
+        X_train /= 255
+        X_test /= 255
+
+        model = simple_model(input_size, num_of_units, num_of_classes)
+
+        acc_superposition = superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units,
+                                                   num_of_classes, num_of_tasks, batch_size)
+
+        if not train_normal:
+            plot_lr(lr_over_time)
+            plot_accuracies_over_time(np.zeros(len(acc_superposition)), acc_superposition)
+        else:
+            plot_accuracies_over_time(acc_normal, acc_superposition)
+
+    print('\nTime elapsed: ', round(time.time() - start_time), 's')
+
 
 
     # todo
+    # maybe the problem for low changes in validation accuracy is in weights initialization
     # what would happen with shifted matrix?
     # add bias with context as a option to a function & test if something changes
 
