@@ -61,7 +61,7 @@ def plot_accuracies_over_time(normal_accuracies, superposition_accuracies):
     """
     plt.plot(normal_accuracies)
     plt.plot(superposition_accuracies)
-    plt.vlines(9, 0, 100, colors='red', linestyles='dotted')
+    plt.vlines(9.5, 0, 100, colors='red', linestyles='dotted')
     plt.legend(['Baseline model', 'Superposition model'])
     plt.title('Model accuracy with normal and superposition training')
     plt.xlabel('Epoch')
