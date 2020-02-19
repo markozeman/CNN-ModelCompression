@@ -9,6 +9,7 @@ from keras.utils.np_utils import to_categorical
 from keras.optimizers import Adam
 from keras.callbacks import Callback, LearningRateScheduler
 from plots import *
+from help_functions import *
 from math import exp
 import numpy as np
 import time
@@ -57,11 +58,11 @@ class TestSuperpositionPerformanceCallback(Callback):
 
         # temporarily change model weights to be suitable for first task (original MNIST images), (without bias node)
         for i, layer in enumerate(self.model.layers[1:]):  # first layer is Flatten so we skip it
-            '''
-            context_inverse_multiplied = np.linalg.inv(self.context_matrices[self.task_index][i])
-            for task_i in range(self.task_index - 1, 0, -1):
-                context_inverse_multiplied = context_inverse_multiplied @ np.linalg.inv(self.context_matrices[task_i][i])
-            '''
+            # multiplying with inverse matrices to 'unfold'
+            # context_inverse_multiplied = np.linalg.inv(self.context_matrices[self.task_index][i])
+            # for task_i in range(self.task_index - 1, 0, -1):
+            #     context_inverse_multiplied = context_inverse_multiplied @ np.linalg.inv(self.context_matrices[task_i][i])
+
 
             # not multiplying with inverse because inverse is the same in binary superposition with {-1, 1} on the diagonal
             # using only element-wise multiplication on diagonal vectors for speed-up
@@ -100,7 +101,7 @@ def lr_scheduler(epoch, lr):
     elif decay_type == 'exponential':
         initial_lr = 0.00001
         k = 0.07
-        t = len(lr_over_time)
+        t = len(lr_over_time) % 10      # to start each new task with the same learning rate as the first one
         lr = initial_lr * exp(-k * t)
     return max(lr, 0.000001)    # don't let learning rate go to 0
 
@@ -151,15 +152,16 @@ def train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_si
     return history, test_callback.accuracies, test_superposition_callback.accuracies
 
 
-def permute_pixels(im):
+def permute_pixels(im, seed):
     """
     Randomly permute pixels of image 'im'.
 
     :param im: image to be permuted (2D numpy array)
+    :param seed: number that serves to have the same permutation for all images in the array
     :return: permuted image (2D numpy array)
     """
     im_1d = im.flatten()
-    im_1d_permuted = np.random.permutation(im_1d)
+    im_1d_permuted = np.random.RandomState(seed=seed).permutation(im_1d)
     return np.reshape(im_1d_permuted, im.shape)
 
 
@@ -170,7 +172,8 @@ def permute_images(images):
     :param images: numpy array of images
     :return: numpy array of permuted images (of the same size)
     """
-    return np.array([permute_pixels(im) for im in images])
+    seed = np.random.randint(low=4294967295, dtype=np.uint32)    # make a random seed for all images in an array
+    return np.array([permute_pixels(im, seed) for im in images])
 
 
 def random_binary_vector(size):
@@ -196,7 +199,11 @@ def get_context_matrices(num_of_units, num_of_classes, num_of_tasks):
     :return: multidimensional numpy array with random context (binary superposition)
     """
     context_matrices = []
-    for _ in range(num_of_tasks):
+    for i in range(num_of_tasks):
+        # C1 = shift_matrix_columns(np.diag(random_binary_vector(num_of_units)), i)
+        # C2 = shift_matrix_columns(np.diag(random_binary_vector(num_of_units)), i)
+        # C3 = shift_matrix_columns(np.diag(random_binary_vector(num_of_classes)), i)
+
         C1 = np.diag(random_binary_vector(num_of_units))
         C2 = np.diag(random_binary_vector(num_of_units))
         C3 = np.diag(random_binary_vector(num_of_classes))
@@ -315,13 +322,11 @@ if __name__ == '__main__':
     num_of_units = 1024
     num_of_classes = 10
 
-    num_of_tasks = 20       # todo - change to 50
+    num_of_tasks = 4       # todo - change to 50
     num_of_epochs = 10
     batch_size = 600
 
-    start_time = time.time()
-
-    train_normal = True
+    train_normal = False
     train_superposition = True
 
     if train_normal:
@@ -366,12 +371,9 @@ if __name__ == '__main__':
         else:
             plot_accuracies_over_time(acc_normal, acc_superposition)
 
-    print('\nTime elapsed: ', round(time.time() - start_time), 's')
-
 
 
     # todo
-    # maybe the problem for low changes in validation accuracy is in weights initialization
-    # what would happen with shifted matrix?
-    # add bias with context as a option to a function & test if something changes
+    # make bullet-points of work done
+    # superposition on blackboard
 
