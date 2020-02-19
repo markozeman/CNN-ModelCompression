@@ -1,2 +1,4 @@
 # CNN-ModelCompression
-Different techniques of model compression using pre-trained CNN Xception model. 
+Trying different techniques of model compression.
+
+## Superposition of many models in one (convolutional) neural network.
