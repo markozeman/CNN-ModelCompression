@@ -96,6 +96,31 @@ class TestRealSuperpositionPerformanceCallback(Callback):
         self.saved_weights = saved_weights
         self.accuracies = []
 
+    def on_train_end(self, logs=None):
+        # get current model weights and save them to later restore the model
+        curr_weights = [layer.get_weights() for layer in self.model.layers[1:]]
+
+        if len(self.saved_weights) == 0:
+            summed_weights = curr_weights
+        elif len(self.saved_weights) == 1:
+            summed_weights = self.saved_weights[0]
+        else:  # len(self.saved_weights) >= 2
+            summed_weights = sum_up_weights(self.saved_weights)
+
+        # multiply with inverse matrix of the first context matrix (without changing bias node), set that as temporary model weights
+        for i, layer in enumerate(self.model.layers[1:]):
+            # context matrix should be inversed but in this case of binary superposition the matrix inverse is the same as original
+            layer.set_weights([summed_weights[i][0] @ self.context_matrices[0][i], summed_weights[i][1]])
+
+        loss, accuracy = self.model.evaluate(self.X_test[:1000], self.y_test[:1000], verbose=2)
+        self.accuracies.append(accuracy * 100)
+
+        # change model weights back (restore the model)
+        for index, layer in enumerate(self.model.layers[1:]):
+            layer.set_weights(curr_weights[index])
+
+
+    '''
     def on_epoch_begin(self, epoch, logs=None):
         # get current model weights and save them to later restore the model
         curr_weights = [layer.get_weights() for layer in self.model.layers[1:]]
@@ -121,6 +146,7 @@ class TestRealSuperpositionPerformanceCallback(Callback):
         # change model weights back (restore the model)
         for index, layer in enumerate(self.model.layers[1:]):
             layer.set_weights(curr_weights[index])
+    '''
 
 
 lr_over_time = []   # global variable to store changing learning rates
@@ -194,7 +220,7 @@ def train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_si
     :param batch_size: batch size - number of samples per gradient update (default = 32)
     :param validation_share: share of examples to be used for validation (default = 0)
     :param mode: string for learning mode, important for callbacks - possible values: 'normal', 'superposition', 'real superposition'
-    :param context_matrices: multidimensional numpy array with random context (binary superposition), only used when mode = 'superposition'
+    :param context_matrices: multidimensional numpy array with random context (binary superposition), only used when mode = 'superposition' or 'real superposition'
     :param task_index: index of current task, only used when mode = 'superposition'
     :param saved_weights: weights of the model at the end of each task, only used when mode = 'real superposition'
     :return: History object and 3 lists of test accuracies for every training epoch (normal, superposition and real superposition)
@@ -423,11 +449,15 @@ def real_superposition_training(model, X_train, y_train, X_test, y_test, num_of_
     saved_weights = []   # saved weights at the end of each task
     context_matrices = get_context_matrices(num_of_units, num_of_classes, num_of_tasks)
 
-    # multiply random initialized weights with context matrices for each layer (without changing weights from bias node)
-    context_multiplication(model, context_matrices, 0)
+    # # multiply random initialized weights with context matrices for each layer (without changing weights from bias node)
+    # context_multiplication(model, context_matrices, 0)
 
     history, _, _, accuracies = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1,
                                             mode='real superposition', context_matrices=context_matrices, saved_weights=saved_weights)
+
+    # multiply trained weights with context matrices for each layer (without changing weights from bias node)
+    context_multiplication(model, context_matrices, 0)
+
     original_accuracies.extend(accuracies)
     saved_weights.append([layer.get_weights() for layer in model.layers[1:]])   # save weights at the end of training
 
@@ -442,12 +472,16 @@ def real_superposition_training(model, X_train, y_train, X_test, y_test, num_of_
         for index, layer in enumerate(model.layers[1:]):
             layer.set_weights(init_weights[index])
 
-        # multiply current weights with context matrices for each layer (without changing weights from bias node)
-        context_multiplication(model, context_matrices, i + 1)
+        # # multiply current weights with context matrices for each layer (without changing weights from bias node)
+        # context_multiplication(model, context_matrices, i + 1)
 
         permuted_X_train = permute_images(X_train)
         history, _, _, accuracies = train_model(model, permuted_X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1,
                                                 mode='real superposition', context_matrices=context_matrices, saved_weights=saved_weights)
+
+        # multiply trained weights with context matrices for each layer (without changing weights from bias node)
+        context_multiplication(model, context_matrices, i + 1)
+
         original_accuracies.extend(accuracies)
         saved_weights.append([layer.get_weights() for layer in model.layers[1:]])  # save weights at the end of training
 
@@ -495,7 +529,6 @@ if __name__ == '__main__':
             plot_accuracies_over_time(np.zeros(len(acc_superposition)), acc_superposition)
         else:
             plot_accuracies_over_time(acc_normal, acc_superposition)
-
 
     if train_real_superposition:
         lr_over_time = []  # re-initiate learning rate
