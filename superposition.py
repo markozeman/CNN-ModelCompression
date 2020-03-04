@@ -496,13 +496,13 @@ if __name__ == '__main__':
     num_of_units = 1024
     num_of_classes = 10
 
-    num_of_tasks = 10       # todo - change to 50
+    num_of_tasks = 3       # todo - change to 50
     num_of_epochs = 10
     batch_size = 600
 
     train_normal = False
-    train_superposition = False
-    train_real_superposition = True
+    train_superposition = True
+    train_real_superposition = False
 
     if train_normal:
         X_train, y_train, X_test, y_test = prepare_data(num_of_classes)

@@ -1,4 +1,33 @@
-from superposition import simple_model, prepare_data
+from keras import Sequential
+from keras.engine.saving import load_model
+from keras.layers import Conv2D, MaxPooling2D, Dropout, Flatten, Dense
+from keras.optimizers import Adadelta
+from superposition import prepare_data
+from plots import plot_weights_histogram
+import tensorflow as tf
+
+
+def cnn_model(input_size, num_of_classes):
+    """
+    Create simple CNN model.
+
+    :param input_size: image input size in pixels
+    :param num_of_classes: number of different classes/output labels
+    :return: Keras model instance
+    """
+    model = Sequential()
+    model.add(Conv2D(32, kernel_size=(3, 3), activation='relu', input_shape=(*input_size, 1)))
+    model.add(Conv2D(64, kernel_size=(3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Dropout(0.25))
+    model.add(Flatten())
+    model.add(Dense(128, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(num_of_classes, activation='softmax'))
+
+    model.compile(loss='categorical_crossentropy', optimizer=Adadelta(), metrics=['accuracy'])
+    model.summary()
+    return model
 
 
 def train_model(model, X_train, y_train, num_of_epochs, batch_size=32, validation_share=0.0):
@@ -13,30 +42,99 @@ def train_model(model, X_train, y_train, num_of_epochs, batch_size=32, validatio
     :param validation_share: share of examples to be used for validation (default = 0)
     :return: History object
     """
-    pass
+    history = model.fit(X_train, y_train, epochs=num_of_epochs, batch_size=batch_size,
+                        validation_split=validation_share, verbose=2)
+    return history
+
+
+def calculate_threshold(model, pruning_share):
+    """
+    Calculate absolute threshold used for weight pruning.
+
+    :param model: Keras model instance
+    :param pruning_share: value between 0 and 1 that defines how many weights we want to prune
+    :return: threshold
+    """
+    all_weights = []
+    for lyr in model.layers:
+        w = lyr.get_weights()
+        if w:
+            all_weights.extend(w[0].flatten())
+            all_weights.extend(w[1].flatten())
+
+    all_weights = list(map(lambda x: abs(x), all_weights))    # absolute value of all weights
+    all_weights.sort()
+
+    plot_weights_histogram(all_weights, 100)
+
+    cut_index = round(len(all_weights) * pruning_share)
+    threshold = all_weights[cut_index]
+    return threshold
+
+
+
+def parameter_pruning(model_name, X_train, y_train, X_test, y_test, pruning_share):
+    """
+    Prune parameters/weights from pre-trained model.
+
+    :param model_name: file name of the pre-trained model
+    :param X_train: train input data
+    :param y_train: train output labels
+    :param X_test: test input data
+    :param y_test: test output labels
+    :param pruning_share: value between 0 and 1 that defines how many weights we want to prune
+    :return: Keras model after pruning
+    """
+    model = load_model(model_name)
+    model.summary()
+
+    # test accuracy on test data
+    # _, accuracy = model.evaluate(X_test, y_test, verbose=2)
+    # print('accuracy: ', round(accuracy * 100, 2))
+
+    # calculate threshold
+    threshold = calculate_threshold(model, pruning_share)
+    print(threshold)
+
+    # create mask matrices
+
+    # delete weights below threshold or set them to 0
+
+    # re-train on train data with less weights
+
+    # test acc. on test data
+
+
 
 
 
 
 if __name__ == '__main__':
+    # to avoid cuDNN error (https://github.com/tensorflow/tensorflow/issues/24496)
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.Session(config=config)
+
     input_size = (28, 28)
-    num_of_units = 1024
     num_of_classes = 10
 
     num_of_epochs = 10
     batch_size = 600
 
     X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
+    # reshape to the right dimensions for CNN
+    X_train = X_train.reshape(X_train.shape[0], *input_size, 1)
+    X_test = X_test.reshape(X_test.shape[0], *input_size, 1)
 
-    model = simple_model(input_size, num_of_units, num_of_classes)
+    # model = cnn_model(input_size, num_of_classes)
+    #
+    # train_model(model, X_train, y_train, num_of_epochs, batch_size, validation_share=0.1)
+    #
+    # loss, accuracy = model.evaluate(X_test, y_test, verbose=2)
+    # print('accuracy: ', round(accuracy, 4))
 
-    train_model(model, X_train, y_train, num_of_epochs, batch_size, validation_share=0.1)
+    # model.save('saved_data/cnn_model.h5')
 
-    loss, accuracy = model.evaluate(X_test, y_test, verbose=2)
-    print('loss: ', loss)
-    print('accuracy: ', accuracy)
-
-
-
-
+    pruning_share = 0.1
+    parameter_pruning('saved_data/cnn_model.h5', X_train, y_train, X_test, y_test, pruning_share)
 

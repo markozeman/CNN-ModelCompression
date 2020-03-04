@@ -83,6 +83,21 @@ def plot_lr(learning_rates):
     plt.show()
 
 
+def plot_weights_histogram(x, bins):
+    """
+    Plot weights values on histogram.
+
+    :param x: data/values to plot
+    :param bins: number of bins on histogram
+    :return: None
+    """
+    plt.hist(x, bins=bins)
+    plt.title('Values of trained weights in the network')
+    plt.xlabel('Weight value')
+    plt.ylabel('Occurrences')
+    plt.show()
+
+
 def weights_heatmaps(W_matrices):
     """
     Plot heat maps of weights from every layer in the network.
