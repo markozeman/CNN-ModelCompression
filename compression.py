@@ -1,10 +1,12 @@
+import tensorflow as tf
+import numpy as np
 from keras import Sequential
 from keras.engine.saving import load_model
 from keras.layers import Conv2D, MaxPooling2D, Dropout, Flatten, Dense
 from keras.optimizers import Adadelta
+from kerassurgeon.operations import delete_layer, delete_channels
 from superposition import prepare_data
 from plots import plot_weights_histogram
-import tensorflow as tf
 
 
 def cnn_model(input_size, num_of_classes):
@@ -59,18 +61,33 @@ def calculate_threshold(model, pruning_share):
     for lyr in model.layers:
         w = lyr.get_weights()
         if w:
+            print(lyr)
+            print(len(w), w[0].shape)
             all_weights.extend(w[0].flatten())
             all_weights.extend(w[1].flatten())
 
     all_weights = list(map(lambda x: abs(x), all_weights))    # absolute value of all weights
     all_weights.sort()
 
-    plot_weights_histogram(all_weights, 100)
+    # plot_weights_histogram(all_weights, 100)
 
     cut_index = round(len(all_weights) * pruning_share)
     threshold = all_weights[cut_index]
     return threshold
 
+
+def best_channels2prune(dense_layer, num_of_neurons):
+    """
+    Find indices of the neurons that has the smallest std of Keras Dense layer.
+
+    :param dense_layer: Keras Dense layer
+    :param num_of_neurons: number of neurons that we want to delete from the layer
+    :return: indices of neurons with the lowest std (len = num_of_neurons)
+    """
+    weights = dense_layer.get_weights()[0]   # without bias
+    # w_abs = np.absolute(weights)
+    indices_sorted = np.argsort(np.std(weights, axis=0))
+    return indices_sorted[:num_of_neurons]
 
 
 def parameter_pruning(model_name, X_train, y_train, X_test, y_test, pruning_share):
@@ -89,12 +106,32 @@ def parameter_pruning(model_name, X_train, y_train, X_test, y_test, pruning_shar
     model.summary()
 
     # test accuracy on test data
-    # _, accuracy = model.evaluate(X_test, y_test, verbose=2)
-    # print('accuracy: ', round(accuracy * 100, 2))
+    _, accuracy = model.evaluate(X_test, y_test, verbose=2)
+    print('accuracy: ', round(accuracy * 100, 2))
 
     # calculate threshold
     threshold = calculate_threshold(model, pruning_share)
     print(threshold)
+
+
+    # test surgeon
+    layer_5 = model.layers[5]
+
+    indices = best_channels2prune(layer_5, 100)
+
+    new_model = delete_channels(model, layer_5, indices)
+    new_model.compile(loss='categorical_crossentropy', optimizer=Adadelta(), metrics=['accuracy'])
+    # new_model.summary()
+
+    # 98.1
+
+    _, accuracy = new_model.evaluate(X_test, y_test, verbose=2)
+    print('accuracy: ', round(accuracy * 100, 2))
+
+    # new_model.save('saved_data/cnn_model_compressed.h5')
+
+
+
 
     # create mask matrices
 
@@ -137,4 +174,11 @@ if __name__ == '__main__':
 
     pruning_share = 0.1
     parameter_pruning('saved_data/cnn_model.h5', X_train, y_train, X_test, y_test, pruning_share)
+
+
+
+    # todo
+    # size of each weight in bits
+    # NN / CNN
+    # test superposition on CNNs
 
