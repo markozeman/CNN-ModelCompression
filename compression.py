@@ -90,7 +90,7 @@ def best_channels2prune(dense_layer, num_of_neurons):
     return indices_sorted[:num_of_neurons]
 
 
-def parameter_pruning(model_name, X_train, y_train, X_test, y_test, pruning_share):
+def parameter_pruning(model_name, X_train, y_train, X_test, y_test, pruning_share, num_of_epochs, batch_size):
     """
     Prune parameters/weights from pre-trained model.
 
@@ -100,6 +100,8 @@ def parameter_pruning(model_name, X_train, y_train, X_test, y_test, pruning_shar
     :param X_test: test input data
     :param y_test: test output labels
     :param pruning_share: value between 0 and 1 that defines how many weights we want to prune
+    :param num_of_epochs: number of epochs to train the model
+    :param batch_size: batch size - number of samples per gradient update
     :return: Keras model after pruning
     """
     model = load_model(model_name)
@@ -109,40 +111,39 @@ def parameter_pruning(model_name, X_train, y_train, X_test, y_test, pruning_shar
     _, accuracy = model.evaluate(X_test, y_test, verbose=2)
     print('accuracy: ', round(accuracy * 100, 2))
 
-    # calculate threshold
-    threshold = calculate_threshold(model, pruning_share)
-    print(threshold)
+    # delete some neurons from two Dense layers
+    dense_1 = model.layers[1]
+    indices_1 = best_channels2prune(dense_1, 1014)
 
+    new_model = delete_channels(model, dense_1, indices_1)
+    dense_2 = new_model.layers[3]
+    indices_2 = best_channels2prune(dense_2, 1014)
 
-    # test surgeon
-    layer_5 = model.layers[5]
-
-    indices = best_channels2prune(layer_5, 100)
-
-    new_model = delete_channels(model, layer_5, indices)
+    new_model = delete_channels(new_model, dense_2, indices_2)
     new_model.compile(loss='categorical_crossentropy', optimizer=Adadelta(), metrics=['accuracy'])
-    # new_model.summary()
-
-    # 98.1
+    new_model.summary()
 
     _, accuracy = new_model.evaluate(X_test, y_test, verbose=2)
     print('accuracy: ', round(accuracy * 100, 2))
 
+    # re-train on train data with less weights
+    new_model.fit(X_train, y_train, epochs=num_of_epochs, batch_size=batch_size)
+
+    # test acc. on test data
+    _, accuracy = new_model.evaluate(X_test, y_test, verbose=2)
+    print('accuracy after re-training: ', round(accuracy * 100, 2))
+
     # new_model.save('saved_data/cnn_model_compressed.h5')
 
 
-
-
+    '''
+    # maybe delete only weights, not neurons
+    # calculate threshold
+    threshold = calculate_threshold(model, pruning_share)
+    print(threshold)
     # create mask matrices
-
     # delete weights below threshold or set them to 0
-
-    # re-train on train data with less weights
-
-    # test acc. on test data
-
-
-
+    '''
 
 
 
@@ -160,8 +161,8 @@ if __name__ == '__main__':
 
     X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
     # reshape to the right dimensions for CNN
-    X_train = X_train.reshape(X_train.shape[0], *input_size, 1)
-    X_test = X_test.reshape(X_test.shape[0], *input_size, 1)
+    # X_train = X_train.reshape(X_train.shape[0], *input_size, 1)
+    # X_test = X_test.reshape(X_test.shape[0], *input_size, 1)
 
     # model = cnn_model(input_size, num_of_classes)
     #
@@ -173,12 +174,12 @@ if __name__ == '__main__':
     # model.save('saved_data/cnn_model.h5')
 
     pruning_share = 0.1
-    parameter_pruning('saved_data/cnn_model.h5', X_train, y_train, X_test, y_test, pruning_share)
+    # parameter_pruning('saved_data/cnn_model.h5', X_train, y_train, X_test, y_test, pruning_share, num_of_epochs, batch_size)
+    parameter_pruning('saved_data/nn_model.h5', X_train, y_train, X_test, y_test, pruning_share, num_of_epochs, batch_size)
 
 
 
     # todo
-    # size of each weight in bits
-    # NN / CNN
+    # size of each weight in bits --> 'numpy.float32'
     # test superposition on CNNs
 
