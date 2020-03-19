@@ -69,6 +69,31 @@ def plot_accuracies_over_time(normal_accuracies, superposition_accuracies):
     plt.show()
 
 
+def plot_general(line_1, line_2, legend_lst, title, x_label, y_label, vertical_lines_x, vl_min, vl_max):
+    """
+    Plot two lines on the same plot with additional general information.
+
+    :param line_1: y values of the first line
+    :param line_2: y values of the second line
+    :param legend_lst: list of two values -> [first line label, second line label]
+    :param title: plot title (string)
+    :param x_label: label of axis x (string)
+    :param y_label: label of axis y (string)
+    :param vertical_lines_x: x values of where to draw vertical lines
+    :param vl_min: vertical lines minimum y value
+    :param vl_max: vertical lines maximum y value
+    :return: None
+    """
+    plt.plot(line_1)
+    plt.plot(line_2)
+    plt.vlines(vertical_lines_x, vl_min, vl_max, colors='red', linestyles='dotted')
+    plt.legend(legend_lst)
+    plt.title(title)
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    plt.show()
+
+
 def plot_lr(learning_rates):
     """
     Plot changes of learning rate over time.

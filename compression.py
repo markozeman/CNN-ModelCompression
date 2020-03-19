@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+import time
 from keras import Sequential
 from keras.engine.saving import load_model
 from keras.layers import Conv2D, MaxPooling2D, Dropout, Flatten, Dense
@@ -126,14 +127,18 @@ def parameter_pruning(model_name, X_train, y_train, X_test, y_test, pruning_shar
     _, accuracy = new_model.evaluate(X_test, y_test, verbose=2)
     print('accuracy: ', round(accuracy * 100, 2))
 
+    start = time.time()
+
     # re-train on train data with less weights
     new_model.fit(X_train, y_train, epochs=num_of_epochs, batch_size=batch_size)
+
+    print(time.time() - start, 's')
 
     # test acc. on test data
     _, accuracy = new_model.evaluate(X_test, y_test, verbose=2)
     print('accuracy after re-training: ', round(accuracy * 100, 2))
 
-    # new_model.save('saved_data/cnn_model_compressed.h5')
+    # new_model.save('saved_data/nn_model_compressed_20x.h5')
 
 
     '''
@@ -183,3 +188,5 @@ if __name__ == '__main__':
     # size of each weight in bits --> 'numpy.float32'
     # test superposition on CNNs
 
+    # not a big difference between pruning random neurons or pruning neurons with the smallest std
+    # show last plot in plots folder

@@ -5,8 +5,9 @@ https://arxiv.org/pdf/1902.05522.pdf
 from datasets import *
 from keras.models import Sequential
 from keras.layers import Dense, Flatten
+from keras.engine.saving import load_model
 from keras.utils.np_utils import to_categorical
-from keras.optimizers import Adam
+from keras.optimizers import Adam, Adadelta
 from keras.callbacks import Callback, LearningRateScheduler
 from plots import *
 from functools import reduce
@@ -53,12 +54,12 @@ class TestSuperpositionPerformanceCallback(Callback):
         # save current model weights (without bias node)
         curr_w_matrices = []
         curr_bias_vectors = []
-        for layer in self.model.layers[1:]:  # first layer is Flatten so we skip it
+        for layer in self.model.layers[2:]:  # first layer is Flatten so we skip it     # todo set to [1:]
             curr_w_matrices.append(layer.get_weights()[0])
             curr_bias_vectors.append(layer.get_weights()[1])
 
         # temporarily change model weights to be suitable for first task (original MNIST images), (without bias node)
-        for i, layer in enumerate(self.model.layers[1:]):  # first layer is Flatten so we skip it
+        for i, layer in enumerate(self.model.layers[2:]):  # first layer is Flatten so we skip it   # todo set to [1:]
             # # multiplying with inverse matrices to 'unfold'
             # context_inverse_multiplied = np.linalg.inv(self.context_matrices[self.task_index][i])
             # for task_i in range(self.task_index - 1, 0, -1):
@@ -79,7 +80,7 @@ class TestSuperpositionPerformanceCallback(Callback):
         self.accuracies.append(accuracy * 100)
 
         # change model weights back (without bias node)
-        for i, layer in enumerate(self.model.layers[1:]):  # first layer is Flatten so we skip it
+        for i, layer in enumerate(self.model.layers[2:]):  # first layer is Flatten so we skip it   # todo set to [1:]
             layer.set_weights([curr_w_matrices[i], curr_bias_vectors[i]])
 
 
@@ -201,7 +202,7 @@ def simple_model(input_size, num_of_units, num_of_classes):
     model.add(Dense(num_of_units, activation='relu'))
     model.add(Dense(num_of_units, activation='relu'))
     model.add(Dense(num_of_classes, activation='softmax'))
-    model.compile(optimizer=Adam(learning_rate=0.00001), loss='categorical_crossentropy', metrics=['accuracy'])
+    model.compile(optimizer=Adam(learning_rate=0.0001), loss='categorical_crossentropy', metrics=['accuracy'])     # todo - change learning_rate=0.00001
     model.summary()
     return model
 
@@ -368,7 +369,7 @@ def context_multiplication(model, context_matrices, task_index):
     :param task_index: index of a task to know which context_matrices row to use
     :return: None (but model weights are changed)
     """
-    for i, layer in enumerate(model.layers[1:]):  # first layer is Flatten so we skip it
+    for i, layer in enumerate(model.layers[2:]):  # first layer is Flatten so we skip it    # todo set to [1:]
         curr_w = layer.get_weights()[0]
         curr_w_bias = layer.get_weights()[1]
 
@@ -493,21 +494,23 @@ def real_superposition_training(model, X_train, y_train, X_test, y_test, num_of_
 
 if __name__ == '__main__':
     input_size = (28, 28)
-    num_of_units = 1024
+    num_of_units = 100     # todo - change to 1024
     num_of_classes = 10
 
-    num_of_tasks = 3       # todo - change to 50
+    num_of_tasks = 50       # todo - change to 50
     num_of_epochs = 10
     batch_size = 600
 
-    train_normal = False
+    train_normal = True
     train_superposition = True
     train_real_superposition = False
 
     if train_normal:
         X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
 
-        model = simple_model(input_size, num_of_units, num_of_classes)
+        # model = simple_model(input_size, num_of_units, num_of_classes)
+        model = load_model('saved_data/nn_model_compressed_20x.h5')
+        model.compile(optimizer=Adam(learning_rate=0.00001), loss='categorical_crossentropy', metrics=['accuracy'])
 
         acc_normal = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, batch_size)
 
@@ -519,7 +522,9 @@ if __name__ == '__main__':
         lr_over_time = []  # re-initiate learning rate
         X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
 
-        model = simple_model(input_size, num_of_units, num_of_classes)
+        # model = simple_model(input_size, num_of_units, num_of_classes)
+        model = load_model('saved_data/nn_model_compressed_20x.h5')
+        model.compile(optimizer=Adam(learning_rate=0.00001), loss='categorical_crossentropy', metrics=['accuracy'])
 
         acc_superposition = superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units,
                                                    num_of_classes, num_of_tasks, batch_size)
@@ -540,5 +545,6 @@ if __name__ == '__main__':
                                                              num_of_units, num_of_classes, num_of_tasks, batch_size)
 
         plot_lr(lr_over_time)
+        # accuracies saved only on the end of each training task, thus 10 times less points on the plot
         plot_accuracies_over_time(np.zeros(len(acc_real_superposition)), acc_real_superposition)
 
