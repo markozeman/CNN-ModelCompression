@@ -4,17 +4,15 @@ https://arxiv.org/pdf/1902.05522.pdf
 """
 from datasets import *
 from keras.models import Sequential
-from keras.layers import Dense, Flatten
-from keras.engine.saving import load_model
+from keras.layers import Dense, Flatten, Conv2D, MaxPooling2D
 from keras.utils.np_utils import to_categorical
-from keras.optimizers import Adam, Adadelta
+from keras.optimizers import Adam
 from keras.callbacks import Callback, LearningRateScheduler
 from plots import *
 from functools import reduce
-from help_functions import *
 from math import exp
 import numpy as np
-import time
+import tensorflow as tf
 
 
 class TestPerformanceCallback(Callback):
@@ -54,34 +52,43 @@ class TestSuperpositionPerformanceCallback(Callback):
         # save current model weights (without bias node)
         curr_w_matrices = []
         curr_bias_vectors = []
-        for layer in self.model.layers[1:]:  # first layer is Flatten so we skip it     # todo set to [1:]
-            curr_w_matrices.append(layer.get_weights()[0])
-            curr_bias_vectors.append(layer.get_weights()[1])
+        for i, layer in enumerate(self.model.layers):
+            if i < 2 or i > 3:  # conv or dense layer
+                curr_w_matrices.append(layer.get_weights()[0])
+                curr_bias_vectors.append(layer.get_weights()[1])
 
         # temporarily change model weights to be suitable for first task (original MNIST images), (without bias node)
-        for i, layer in enumerate(self.model.layers[1:]):  # first layer is Flatten so we skip it   # todo set to [1:]
-            # # multiplying with inverse matrices to 'unfold'
-            # context_inverse_multiplied = np.linalg.inv(self.context_matrices[self.task_index][i])
-            # for task_i in range(self.task_index - 1, 0, -1):
-            #     context_inverse_multiplied = context_inverse_multiplied @ np.linalg.inv(self.context_matrices[task_i][i])
+        for i, layer in enumerate(self.model.layers):
+            if i < 2 or i > 3:  # conv or dense layer
+                # not multiplying with inverse because inverse is the same in binary superposition with {-1, 1} on the diagonal
+                # using only element-wise multiplication on diagonal vectors for speed-up
 
+                if i < 2:  # conv layer
+                    context_inverse_multiplied = self.context_matrices[self.task_index][i]
+                    for task_i in range(self.task_index - 1, 0, -1):
+                        context_inverse_multiplied = np.multiply(context_inverse_multiplied, self.context_matrices[task_i][i])
 
-            # not multiplying with inverse because inverse is the same in binary superposition with {-1, 1} on the diagonal
-            # using only element-wise multiplication on diagonal vectors for speed-up
-            context_inverse_multiplied = np.diagonal(self.context_matrices[self.task_index][i])
-            for task_i in range(self.task_index - 1, 0, -1):
-                context_inverse_multiplied = np.multiply(context_inverse_multiplied, np.diagonal(self.context_matrices[task_i][i]))
-            context_inverse_multiplied = np.diag(context_inverse_multiplied)
+                    layer.set_weights([np.multiply(curr_w_matrices[i], context_inverse_multiplied), curr_bias_vectors[i]])
 
-            layer.set_weights([curr_w_matrices[i] @ context_inverse_multiplied, curr_bias_vectors[i]])
+                else:  # dense layer
+                    context_inverse_multiplied = np.diagonal(self.context_matrices[self.task_index][i - 2])
+                    for task_i in range(self.task_index - 1, 0, -1):
+                        context_inverse_multiplied = np.multiply(context_inverse_multiplied, np.diagonal(self.context_matrices[task_i][i - 2]))
+                    context_inverse_multiplied = np.diag(context_inverse_multiplied)
+
+                    layer.set_weights([curr_w_matrices[i - 2] @ context_inverse_multiplied, curr_bias_vectors[i - 2]])
 
         # evaluate only on 1.000 images (10% of all test images) to speed-up
         loss, accuracy = self.model.evaluate(self.X_test[:1000], self.y_test[:1000], verbose=2)
         self.accuracies.append(accuracy * 100)
 
         # change model weights back (without bias node)
-        for i, layer in enumerate(self.model.layers[1:]):  # first layer is Flatten so we skip it   # todo set to [1:]
-            layer.set_weights([curr_w_matrices[i], curr_bias_vectors[i]])
+        for i, layer in enumerate(self.model.layers):
+            if i < 2 or i > 3:  # conv or dense layer
+                if i < 2:  # conv layer
+                    layer.set_weights([curr_w_matrices[i], curr_bias_vectors[i]])
+                else:  # dense layer
+                    layer.set_weights([curr_w_matrices[i - 2], curr_bias_vectors[i - 2]])
 
 
 class TestRealSuperpositionPerformanceCallback(Callback):
@@ -167,7 +174,7 @@ def lr_scheduler(epoch, lr):
     if decay_type == 'linear':
         lr -= 10 ** -5
     elif decay_type == 'exponential':
-        initial_lr = 0.00001
+        initial_lr = 0.0001
         k = 0.07
         t = len(lr_over_time) % 10      # to start each new task with the same learning rate as the first one
         lr = initial_lr * exp(-k * t)
@@ -188,21 +195,22 @@ def sum_up_weights(weights_list):
             weights_list)
 
 
-def simple_model(input_size, num_of_units, num_of_classes):
+def simple_model(input_size, num_of_classes):
     """
-    Create simple NN model with two hidden layers, each has 'num_of_units' neurons.
+    Create simple CNN model.
 
     :param input_size: image input size in pixels
-    :param num_of_units: number of neurons in each hidden layer
     :param num_of_classes: number of different classes/output labels
     :return: Keras model instance
     """
     model = Sequential()
-    model.add(Flatten(input_shape=input_size))
-    model.add(Dense(num_of_units, activation='relu'))
-    model.add(Dense(num_of_units, activation='relu'))
+    model.add(Conv2D(32, kernel_size=(3, 3), activation='relu', input_shape=(*input_size, 1)))
+    model.add(Conv2D(64, kernel_size=(3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Flatten())
+    model.add(Dense(128, activation='relu'))
     model.add(Dense(num_of_classes, activation='softmax'))
-    model.compile(optimizer=Adam(learning_rate=0.00001), loss='categorical_crossentropy', metrics=['accuracy'])
+    model.compile(optimizer=Adam(learning_rate=0.0001), loss='categorical_crossentropy', metrics=['accuracy'])
     model.summary()
     return model
 
@@ -261,6 +269,10 @@ def prepare_data(num_of_classes):
     X_train /= 255
     X_test /= 255
 
+    # reshape to the right dimensions for CNN
+    X_train = X_train.reshape(X_train.shape[0], *input_size, 1)
+    X_test = X_test.reshape(X_test.shape[0], *input_size, 1)
+
     return X_train, y_train, X_test, y_test
 
 
@@ -288,12 +300,12 @@ def permute_images(images):
     return np.array([permute_pixels(im, seed) for im in images])
 
 
-def random_binary_vector(size):
+def random_binary_array(size):
     """
-    Create a vector of 'size' length consisting only of numbers -1 and 1 (approximately 50% each).
+    Create an array of 'size' length consisting only of numbers -1 and 1 (approximately 50% each).
 
-    :param size: length of the created vector
-    :return: binary numpy vector with values -1 or 1
+    :param size: shape of the created array
+    :return: binary numpy array with values -1 or 1
     """
     vec = np.random.uniform(-1, 1, size)
     vec[vec < 0] = -1
@@ -301,25 +313,25 @@ def random_binary_vector(size):
     return vec
 
 
-def get_context_matrices(num_of_units, num_of_classes, num_of_tasks):
+def get_context_matrices(model):
     """
-    Get random context matrices for neural network that uses binary superposition as a context.
+    Get random context matrices for simple convolutional neural network that uses binary superposition as a context.
 
-    :param num_of_units: number of neurons in each hidden layer
-    :param num_of_classes: number of different classes/output labels
-    :param num_of_tasks: number of different tasks (permutations of original images)
+    :param model: Keras model instance
     :return: multidimensional numpy array with random context (binary superposition)
     """
+    context_shapes = []
+    for i, layer in enumerate(model.layers):
+        if i < 2 or i > 3:   # conv layer or dense layer
+            context_shapes.append(layer.get_weights()[0].shape)
+
     context_matrices = []
     for i in range(num_of_tasks):
-        # C1 = shift_matrix_columns(np.diag(random_binary_vector(num_of_units)), i)
-        # C2 = shift_matrix_columns(np.diag(random_binary_vector(num_of_units)), i)
-        # C3 = shift_matrix_columns(np.diag(random_binary_vector(num_of_classes)), i)
-
-        C1 = np.diag(random_binary_vector(num_of_units))
-        C2 = np.diag(random_binary_vector(num_of_units))
-        C3 = np.diag(random_binary_vector(num_of_classes))
-        context_matrices.append([C1, C2, C3])
+        C1 = random_binary_array(context_shapes[0])     # conv layer
+        C2 = random_binary_array(context_shapes[1])     # conv layer
+        C3 = np.diag(random_binary_array(context_shapes[2][1]))   # dense layer
+        C4 = np.diag(random_binary_array(context_shapes[3][1]))   # dense layer
+        context_matrices.append([C1, C2, C3, C4])
     return context_matrices
 
 
@@ -369,12 +381,17 @@ def context_multiplication(model, context_matrices, task_index):
     :param task_index: index of a task to know which context_matrices row to use
     :return: None (but model weights are changed)
     """
-    for i, layer in enumerate(model.layers[1:]):  # first layer is Flatten so we skip it    # todo set to [1:]
-        curr_w = layer.get_weights()[0]
-        curr_w_bias = layer.get_weights()[1]
+    for i, layer in enumerate(model.layers):
+        if i < 2 or i > 3:  # conv or dense layer
+            curr_w = layer.get_weights()[0]
+            curr_w_bias = layer.get_weights()[1]
 
-        new_w = curr_w @ context_matrices[task_index][i]
-        layer.set_weights([new_w, curr_w_bias])
+            if i < 2:   # conv layer
+                new_w = np.multiply(curr_w, context_matrices[task_index][i])
+            else:    # dense layer
+                new_w = curr_w @ context_matrices[task_index][i - 2]    # -2 because of Flatten and MaxPooling layers
+
+            layer.set_weights([new_w, curr_w_bias])
 
 
 def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units, num_of_classes, num_of_tasks, batch_size=32):
@@ -395,7 +412,7 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
     :return: list of test accuracies for 10 epochs for each task (or validation accuracies for original task)
     """
     original_accuracies = []
-    context_matrices = get_context_matrices(num_of_units, num_of_classes, num_of_tasks)
+    context_matrices = get_context_matrices(model)
 
     # multiply random initialized weights with context matrices for each layer (without changing weights from bias node)
     # context_multiplication(model, context_matrices, 0)
@@ -448,7 +465,7 @@ def real_superposition_training(model, X_train, y_train, X_test, y_test, num_of_
 
     original_accuracies = []
     saved_weights = []   # saved weights at the end of each task
-    context_matrices = get_context_matrices(num_of_units, num_of_classes, num_of_tasks)
+    context_matrices = get_context_matrices(model)
 
     # # multiply random initialized weights with context matrices for each layer (without changing weights from bias node)
     # context_multiplication(model, context_matrices, 0)
@@ -493,24 +510,26 @@ def real_superposition_training(model, X_train, y_train, X_test, y_test, num_of_
 
 
 if __name__ == '__main__':
+    # to avoid cuDNN error (https://github.com/tensorflow/tensorflow/issues/24496)
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.Session(config=config)
+
     input_size = (28, 28)
-    num_of_units = 1024     # todo - change to 1024
+    num_of_units = 1024
     num_of_classes = 10
 
-    num_of_tasks = 3       # todo - change to 50
+    num_of_tasks = 5       # todo - change to 50
     num_of_epochs = 10
     batch_size = 600
 
-    train_normal = True
+    train_normal = False
     train_superposition = True
-    train_real_superposition = False
 
     if train_normal:
         X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
 
-        model = simple_model(input_size, num_of_units, num_of_classes)
-        # model = load_model('saved_data/nn_model_compressed_20x.h5')
-        # model.compile(optimizer=Adam(learning_rate=0.00001), loss='categorical_crossentropy', metrics=['accuracy'])
+        model = simple_model(input_size, num_of_classes)
 
         acc_normal = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, batch_size)
 
@@ -522,9 +541,7 @@ if __name__ == '__main__':
         lr_over_time = []  # re-initiate learning rate
         X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
 
-        model = simple_model(input_size, num_of_units, num_of_classes)
-        # model = load_model('saved_data/nn_model_compressed_20x.h5')
-        # model.compile(optimizer=Adam(learning_rate=0.00001), loss='categorical_crossentropy', metrics=['accuracy'])
+        model = simple_model(input_size, num_of_classes)
 
         acc_superposition = superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units,
                                                    num_of_classes, num_of_tasks, batch_size)
@@ -534,17 +551,3 @@ if __name__ == '__main__':
             plot_accuracies_over_time(np.zeros(len(acc_superposition)), acc_superposition)
         else:
             plot_accuracies_over_time(acc_normal, acc_superposition)
-
-    if train_real_superposition:
-        lr_over_time = []  # re-initiate learning rate
-        X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
-
-        model = simple_model(input_size, num_of_units, num_of_classes)
-
-        acc_real_superposition = real_superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs,
-                                                             num_of_units, num_of_classes, num_of_tasks, batch_size)
-
-        plot_lr(lr_over_time)
-        # accuracies saved only on the end of each training task, thus 10 times less points on the plot
-        plot_accuracies_over_time(np.zeros(len(acc_real_superposition)), acc_real_superposition)
-

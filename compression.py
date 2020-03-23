@@ -115,12 +115,12 @@ def parameter_pruning(model_name, X_train, y_train, X_test, y_test, pruning_shar
     # delete some neurons from two Dense layers
     dense_1 = model.layers[1]
     indices_1 = best_channels2prune(dense_1, 1014)
-
     new_model = delete_channels(model, dense_1, indices_1)
+
     dense_2 = new_model.layers[3]
     indices_2 = best_channels2prune(dense_2, 1014)
-
     new_model = delete_channels(new_model, dense_2, indices_2)
+    
     new_model.compile(loss='categorical_crossentropy', optimizer=Adadelta(), metrics=['accuracy'])
     new_model.summary()
 
@@ -190,3 +190,5 @@ if __name__ == '__main__':
 
     # not a big difference between pruning random neurons or pruning neurons with the smallest std
     # show last plot in plots folder
+    # usually in NN weight matrices have normal distributions with variance increasing towards output layer
+
