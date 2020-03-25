@@ -65,11 +65,13 @@ class TestSuperpositionPerformanceCallback(Callback):
                 # using only element-wise multiplication on diagonal vectors for speed-up
 
                 if i < 2:  # conv layer
-                    # todo: flatten
+                    # flatten
+                    context_vector = self.context_matrices[self.task_index][i]
+                    for task_i in range(self.task_index - 1, 0, -1):
+                        context_vector = np.multiply(context_vector, self.context_matrices[task_i][i])
 
-                    pass
-
-
+                    new_w = np.reshape(np.multiply(curr_w_matrices[i].flatten(), context_vector), curr_w_matrices[i].shape)
+                    layer.set_weights([new_w, curr_bias_vectors[i]])
 
                     # context_vector = self.context_matrices[self.task_index][i]
                     # context_inverse_multiplied = multiply_kernels_with_context(curr_w_matrices[i], context_vector)
@@ -315,9 +317,9 @@ def get_context_matrices(model):
     context_matrices = []
     for i in range(num_of_tasks):
         _, kernel_size, tensor_width, num_of_conv_layers = context_shapes[0]
-        C1 = random_binary_array(kernel_size * tensor_width * num_of_conv_layers)     # conv layer
+        C1 = random_binary_array(kernel_size * kernel_size * tensor_width * num_of_conv_layers)     # conv layer
         _, kernel_size, tensor_width, num_of_conv_layers = context_shapes[1]
-        C2 = random_binary_array(kernel_size * tensor_width * num_of_conv_layers)     # conv layer
+        C2 = random_binary_array(kernel_size * kernel_size * tensor_width * num_of_conv_layers)     # conv layer
         C3 = np.diag(random_binary_array(context_shapes[2][1]))   # dense layer
         C4 = np.diag(random_binary_array(context_shapes[3][1]))   # dense layer
         context_matrices.append([C1, C2, C3, C4])
@@ -376,7 +378,7 @@ def context_multiplication(model, context_matrices, task_index):
             curr_w_bias = layer.get_weights()[1]
 
             if i < 2:   # conv layer
-                new_w = multiply_kernels_with_context(curr_w, context_matrices[task_index][i])
+                new_w = np.reshape(np.multiply(curr_w.flatten(), context_matrices[task_index][i]), curr_w.shape)
             else:    # dense layer
                 new_w = curr_w @ context_matrices[task_index][i - 2]    # -2 because of Flatten and MaxPooling layers
 
@@ -508,11 +510,11 @@ if __name__ == '__main__':
     num_of_units = 1024
     num_of_classes = 10
 
-    num_of_tasks = 10       # todo - change to 50
+    num_of_tasks = 25       # todo - change to 50
     num_of_epochs = 10
     batch_size = 600
 
-    train_normal = False
+    train_normal = True
     train_superposition = True
 
     if train_normal:
