@@ -497,7 +497,7 @@ if __name__ == '__main__':
     num_of_units = 1024     # todo - change to 1024
     num_of_classes = 10
 
-    num_of_tasks = 3       # todo - change to 50
+    num_of_tasks = 5       # todo - change to 50
     num_of_epochs = 10
     batch_size = 600
 

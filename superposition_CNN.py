@@ -4,13 +4,14 @@ https://arxiv.org/pdf/1902.05522.pdf
 """
 from datasets import *
 from keras.models import Sequential
-from keras.layers import Dense, Flatten, Conv2D, MaxPooling2D
+from keras.layers import Dense, Flatten, Conv2D, MaxPooling2D, AveragePooling2D
 from keras.utils.np_utils import to_categorical
 from keras.optimizers import Adam
 from keras.callbacks import Callback, LearningRateScheduler
 from plots import *
 from functools import reduce
 from math import exp
+from help_functions import multiply_kernels_with_context
 import numpy as np
 import tensorflow as tf
 
@@ -64,11 +65,25 @@ class TestSuperpositionPerformanceCallback(Callback):
                 # using only element-wise multiplication on diagonal vectors for speed-up
 
                 if i < 2:  # conv layer
-                    context_inverse_multiplied = self.context_matrices[self.task_index][i]
-                    for task_i in range(self.task_index - 1, 0, -1):
-                        context_inverse_multiplied = np.multiply(context_inverse_multiplied, self.context_matrices[task_i][i])
+                    # todo: flatten
 
-                    layer.set_weights([np.multiply(curr_w_matrices[i], context_inverse_multiplied), curr_bias_vectors[i]])
+                    pass
+
+
+
+                    # context_vector = self.context_matrices[self.task_index][i]
+                    # context_inverse_multiplied = multiply_kernels_with_context(curr_w_matrices[i], context_vector)
+                    # for task_i in range(self.task_index - 1, 0, -1):
+                    #     context_inverse_multiplied = multiply_kernels_with_context(context_inverse_multiplied, self.context_matrices[task_i][i])
+                    #
+                    # layer.set_weights([context_inverse_multiplied, curr_bias_vectors[i]])
+
+                    # # unfold with multiplication of context! matrices
+                    # context_vector = self.context_matrices[self.task_index][i]
+                    # for task_i in range(self.task_index - 1, 0, -1):
+                    #     context_vector = np.multiply(context_vector, self.context_matrices[task_i][i])
+                    #
+                    # layer.set_weights([multiply_kernels_with_context(curr_w_matrices[i], context_vector), curr_bias_vectors[i]])
 
                 else:  # dense layer
                     context_inverse_multiplied = np.diagonal(self.context_matrices[self.task_index][i - 2])
@@ -127,34 +142,6 @@ class TestRealSuperpositionPerformanceCallback(Callback):
         for index, layer in enumerate(self.model.layers[1:]):
             layer.set_weights(curr_weights[index])
 
-
-    '''
-    def on_epoch_begin(self, epoch, logs=None):
-        # get current model weights and save them to later restore the model
-        curr_weights = [layer.get_weights() for layer in self.model.layers[1:]]
-
-        # first, element-wise sum up model weights by layers from the list self.saved_weights
-        # second, sum up current model weights and summed up weights from self.saved_weights
-        if len(self.saved_weights) == 0:
-            summed_weights = curr_weights
-        elif len(self.saved_weights) == 1:
-            summed_weights = sum_up_weights([self.saved_weights[0], curr_weights])
-        else:   # len(self.saved_weights) >= 2
-            summed_weights = sum_up_weights([sum_up_weights(self.saved_weights), curr_weights])
-
-        # multiply with inverse matrix of the first context matrix (without changing bias node), set that as temporary model weights
-        for i, layer in enumerate(self.model.layers[1:]):
-            # context matrix should be inversed but in this case of binary superposition the matrix inverse is the same as original
-            layer.set_weights([summed_weights[i][0] @ self.context_matrices[0][i], summed_weights[i][1]])
-
-        # evaluate only on 1.000 images (10% of all test images) to speed-up
-        loss, accuracy = self.model.evaluate(self.X_test[:1000], self.y_test[:1000], verbose=2)
-        self.accuracies.append(accuracy * 100)
-
-        # change model weights back (restore the model)
-        for index, layer in enumerate(self.model.layers[1:]):
-            layer.set_weights(curr_weights[index])
-    '''
 
 
 lr_over_time = []   # global variable to store changing learning rates
@@ -327,8 +314,10 @@ def get_context_matrices(model):
 
     context_matrices = []
     for i in range(num_of_tasks):
-        C1 = random_binary_array(context_shapes[0])     # conv layer
-        C2 = random_binary_array(context_shapes[1])     # conv layer
+        _, kernel_size, tensor_width, num_of_conv_layers = context_shapes[0]
+        C1 = random_binary_array(kernel_size * tensor_width * num_of_conv_layers)     # conv layer
+        _, kernel_size, tensor_width, num_of_conv_layers = context_shapes[1]
+        C2 = random_binary_array(kernel_size * tensor_width * num_of_conv_layers)     # conv layer
         C3 = np.diag(random_binary_array(context_shapes[2][1]))   # dense layer
         C4 = np.diag(random_binary_array(context_shapes[3][1]))   # dense layer
         context_matrices.append([C1, C2, C3, C4])
@@ -387,7 +376,7 @@ def context_multiplication(model, context_matrices, task_index):
             curr_w_bias = layer.get_weights()[1]
 
             if i < 2:   # conv layer
-                new_w = np.multiply(curr_w, context_matrices[task_index][i])
+                new_w = multiply_kernels_with_context(curr_w, context_matrices[task_index][i])
             else:    # dense layer
                 new_w = curr_w @ context_matrices[task_index][i - 2]    # -2 because of Flatten and MaxPooling layers
 
@@ -519,7 +508,7 @@ if __name__ == '__main__':
     num_of_units = 1024
     num_of_classes = 10
 
-    num_of_tasks = 5       # todo - change to 50
+    num_of_tasks = 10       # todo - change to 50
     num_of_epochs = 10
     batch_size = 600
 
