@@ -510,11 +510,11 @@ if __name__ == '__main__':
     num_of_units = 1024
     num_of_classes = 10
 
-    num_of_tasks = 25       # todo - change to 50
+    num_of_tasks = 5       # todo - change to 50
     num_of_epochs = 10
     batch_size = 600
 
-    train_normal = True
+    train_normal = False
     train_superposition = True
 
     if train_normal:
