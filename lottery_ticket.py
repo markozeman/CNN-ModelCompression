@@ -165,12 +165,59 @@ def get_model_weights(model):
     return model_weights, mask
 
 
+def prune_share_for_each_step(prune_share, n):
+    """
+    Calculate pruning share for each of n steps.
+
+    :param prune_share: share of weights we want to prune in each layer
+    :param n: steps to get to the final pruned network
+    :return: prune share for each individual step
+    """
+    return 1 - ((1 - prune_share) ** (1 / n))
+
+
+def iterative_pruning(model, init_weights, mask, n, prune_each_step, X_train, y_train, X_test, y_test, num_of_epochs, batch_size):
+    """
+    Iterative pruning of model weights with lottery ticket hypothesis using mask in n steps.
+
+    :param model: model trained on the whole network with all weights
+    :param init_weights: initial model weights before training started
+    :param mask: binary mask to know which weights are pruned
+    :param n: number of steps to get to the sparsity wanted
+    :param prune_each_step: prune share for each individual step
+    :param X_train: train input data
+    :param y_train: train output labels
+    :param X_test: test input data
+    :param y_test: test output labels
+    :param num_of_epochs: number of epochs to train the model
+    :param batch_size: batch size - number of samples per gradient update
+    :return: None
+    """
+    for _ in range(n):
+        curr_weights_active = [np.sum(m) for m in mask]
+        curr_pruning_numbers = [weights_num * prune_each_step for weights_num in curr_weights_active]
+
+        # for each dense layer get curr_pruning_number of the lowest weights by magnitude and mark them with 0 in mask
+
+
+        # element-wise multiply new mask with init_weights and set that as new model weights
+
+
+        # train model with the same parameters as before just with different weights considering mask
+
+
+        # save test accuracy during learning epochs
+
+
+
+
+
 if __name__ == '__main__':
     input_size = (28, 28)
-    num_of_units = 100
+    num_of_units = 1000
     num_of_classes = 10
 
-    num_of_epochs = 20
+    num_of_epochs = 10
     batch_size = 600
 
     X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
@@ -179,11 +226,17 @@ if __name__ == '__main__':
 
     init_weights, mask = get_model_weights(model)
     print(len(init_weights))
-    print(len(mask))
+    print(len(mask), np.sum(mask[0]), np.sum(mask[1]), np.sum(mask[2]))
 
     acc_train = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size)
 
     plot_general(acc_train, np.zeros(len(acc_train)), ['test accuracy', ''], 'Original MNIST NN learning',
                  'epoch', 'accuracy (%)', [], 0, 0)
 
+    prune_share = 0.99
+    n = 5
+    prune_each_step = prune_share_for_each_step(prune_share, n)
+
+    iterative_pruning(model, init_weights, mask, n, prune_each_step,
+                      X_train, y_train, X_test, y_test, num_of_epochs, batch_size)
 
