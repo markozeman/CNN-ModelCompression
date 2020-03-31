@@ -19,10 +19,11 @@ class TestPerformanceCallback(Callback):
     """
     Callback class for testing normal model performance at the beginning of every epoch.
     """
-    def __init__(self, X_test, y_test):
+    def __init__(self, X_test, y_test, mask):
         super().__init__()
         self.X_test = X_test
         self.y_test = y_test
+        self.mask = mask
         self.accuracies = []
 
     def on_epoch_begin(self, epoch, logs=None):
@@ -31,15 +32,13 @@ class TestPerformanceCallback(Callback):
         self.accuracies.append(accuracy * 100)
 
     def on_batch_begin(self, batch, logs=None):
-        pass
-        # new_w = model.layers[2].get_weights()[0] * mask
-        #
-        # model.layers[2].set_weights([new_w, model.layers[2].get_weights()[1]])
-        #
-        # print('begin')
-        # print(model.layers[2].get_weights())
-        # print()
-
+        # use mask to zero out certain model weights
+        i = 0
+        for layer in model.layers:
+            if isinstance(layer, Dense):
+                new_weights = self.mask[i] * layer.get_weights()[0]
+                layer.set_weights([new_weights, layer.get_weights()[1]])
+                i += 1
 
 
 lr_over_time = []   # global variable to store changing learning rates
@@ -85,7 +84,7 @@ def simple_model(input_size, num_of_units, num_of_classes):
     return model
 
 
-def train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size=32, validation_share=0.0):
+def train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share, mask):
     """
     Train and evaluate Keras model.
 
@@ -95,11 +94,12 @@ def train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_si
     :param X_test: test input data
     :param y_test: test output labels
     :param num_of_epochs: number of epochs to train the model
-    :param batch_size: batch size - number of samples per gradient update (default = 32)
-    :param validation_share: share of examples to be used for validation (default = 0)
+    :param batch_size: batch size - number of samples per gradient update
+    :param validation_share: share of examples to be used for validation
+    :param mask: binary mask to know which weights are pruned
     :return: History object and test accuracies for every training epoch
     """
-    test_callback = TestPerformanceCallback(X_test, y_test)
+    test_callback = TestPerformanceCallback(X_test, y_test, mask)
     lr_callback = LearningRateScheduler(lr_scheduler)
     callbacks = [lr_callback, test_callback]
 
@@ -128,7 +128,7 @@ def prepare_data(num_of_classes):
     return X_train, y_train, X_test, y_test
 
 
-def normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size=32):
+def normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, mask):
     """
     Train NN model.
 
@@ -138,13 +138,14 @@ def normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, batc
     :param X_test: test input data
     :param y_test: test output labels
     :param num_of_epochs: number of epochs to train the model
-    :param batch_size: batch size - number of samples per gradient update (default = 32)
+    :param batch_size: batch size - number of samples per gradient update
+    :param mask: binary mask to know which weights are pruned
     :return: list of test accuracies for 10 epochs for each task
     """
     original_accuracies = []
 
     # first training task - original MNIST images
-    history, accuracies = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1)
+    history, accuracies = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, 0.1, mask)
     original_accuracies.extend(accuracies)
 
     val_acc = np.array(history.history['val_accuracy']) * 100
@@ -155,7 +156,7 @@ def normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, batc
 
 def get_model_weights(model):
     """
-    Get model weights.
+    Get model weights and starting mask.
 
     :param model: Keras model instance
     :return: current model weights, mask of the same shape except for bias connections
@@ -176,11 +177,37 @@ def prune_share_for_each_step(prune_share, n):
     return 1 - ((1 - prune_share) ** (1 / n))
 
 
+def update_mask(model, mask, curr_pruning_numbers):
+    """
+    Prune weights with the mask change.
+
+    :param model: current Keras model
+    :param mask: binary mask to know which weights are pruned
+    :param curr_pruning_numbers: list of numbers of neurons to be marked as inactive in each layer
+    :return: updated mask
+    """
+    updated_mask = []
+    i = 0
+    for layer in model.layers:
+        if isinstance(layer, Dense):
+            prune_num = curr_pruning_numbers[i]
+            m = mask[i]
+            m_0 = int((m.shape[0] * m.shape[1]) - np.sum(m))  # number of zeros in mask (all - number of ones)
+            all_0 = prune_num + m_0    # total number of zeros in 'm' after update
+            w = layer.get_weights()[0]   # without bias
+            w *= m    # to zero out already pruned weights
+            w_abs_flattened_sorted = sorted(np.absolute(w).flatten())
+            abs_threshold = (w_abs_flattened_sorted[all_0] + w_abs_flattened_sorted[all_0 - 1]) / 2
+            updated_mask.append((np.absolute(w) > abs_threshold).astype(float))
+            i += 1
+    return updated_mask
+
+
 def iterative_pruning(model, init_weights, mask, n, prune_each_step, X_train, y_train, X_test, y_test, num_of_epochs, batch_size):
     """
     Iterative pruning of model weights with lottery ticket hypothesis using mask in n steps.
 
-    :param model: model trained on the whole network with all weights
+    :param model: Keras model trained on the whole network with all weights
     :param init_weights: initial model weights before training started
     :param mask: binary mask to know which weights are pruned
     :param n: number of steps to get to the sparsity wanted
@@ -191,25 +218,31 @@ def iterative_pruning(model, init_weights, mask, n, prune_each_step, X_train, y_
     :param y_test: test output labels
     :param num_of_epochs: number of epochs to train the model
     :param batch_size: batch size - number of samples per gradient update
-    :return: None
+    :return: list of test accuracies
     """
-    for _ in range(n):
+    accuracies = []
+    for iteration in range(n):
         curr_weights_active = [np.sum(m) for m in mask]
-        curr_pruning_numbers = [weights_num * prune_each_step for weights_num in curr_weights_active]
+        curr_pruning_numbers = [int(round(weights_num * prune_each_step)) for weights_num in curr_weights_active]
 
         # for each dense layer get curr_pruning_number of the lowest weights by magnitude and mark them with 0 in mask
+        mask = update_mask(model, mask, curr_pruning_numbers)
 
+        print('\n\nIteration', iteration, '\n')
+        print('Remaining weights in each layer: ', [int(np.sum(m)) for m in mask], '\n\n')
 
         # element-wise multiply new mask with init_weights and set that as new model weights
+        i = 0
+        for layer in model.layers:
+            if isinstance(layer, Dense):
+                new_weights = mask[i] * init_weights[i][0]
+                layer.set_weights([new_weights, init_weights[i][1]])
+                i += 1
 
-
-        # train model with the same parameters as before just with different weights considering mask
-
-
-        # save test accuracy during learning epochs
-
-
-
+        # train model with the same parameters as before just with different weights considering mask and save results
+        acc = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, mask)
+        accuracies.extend(acc)
+    return accuracies
 
 
 if __name__ == '__main__':
@@ -225,18 +258,16 @@ if __name__ == '__main__':
     model = simple_model(input_size, num_of_units, num_of_classes)
 
     init_weights, mask = get_model_weights(model)
-    print(len(init_weights))
-    print(len(mask), np.sum(mask[0]), np.sum(mask[1]), np.sum(mask[2]))
 
-    acc_train = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size)
+    acc_train = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, mask)
 
-    plot_general(acc_train, np.zeros(len(acc_train)), ['test accuracy', ''], 'Original MNIST NN learning',
-                 'epoch', 'accuracy (%)', [], 0, 0)
-
-    prune_share = 0.99
-    n = 5
+    # iterative pruning with lottery ticket hypothesis
+    prune_share = 0.99   # share of weights we want to prune in each layer
+    n = 10   # number of steps to get to the sparsity wanted
     prune_each_step = prune_share_for_each_step(prune_share, n)
 
-    iterative_pruning(model, init_weights, mask, n, prune_each_step,
-                      X_train, y_train, X_test, y_test, num_of_epochs, batch_size)
+    acc_pruning = iterative_pruning(model, init_weights, mask, n, prune_each_step,
+                                    X_train, y_train, X_test, y_test, num_of_epochs, batch_size)
 
+    plot_general(acc_train + acc_pruning, np.zeros(len(acc_train) + len(acc_pruning)), ['test accuracy', ''],
+                 'Original MNIST NN learning', 'epoch', 'accuracy (%)', [], 0, 0)
