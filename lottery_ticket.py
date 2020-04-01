@@ -203,7 +203,7 @@ def update_mask(model, mask, curr_pruning_numbers):
     return updated_mask
 
 
-def iterative_pruning(model, init_weights, mask, n, prune_each_step, X_train, y_train, X_test, y_test, num_of_epochs, batch_size):
+def iterative_pruning(model, init_weights, mask, n, prune_each_step, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, use_init_weights=True):
     """
     Iterative pruning of model weights with lottery ticket hypothesis using mask in n steps.
 
@@ -218,9 +218,11 @@ def iterative_pruning(model, init_weights, mask, n, prune_each_step, X_train, y_
     :param y_test: test output labels
     :param num_of_epochs: number of epochs to train the model
     :param batch_size: batch size - number of samples per gradient update
-    :return: list of test accuracies
+    :param use_init_weights: True if you want to use initial weights after pruning, False if already trained weights
+    :return: list of test accuracies, list of strings presenting percentage of remained weights for each step
     """
     accuracies = []
+    remained_weights = [100.0]
     for iteration in range(n):
         curr_weights_active = [np.sum(m) for m in mask]
         curr_pruning_numbers = [int(round(weights_num * prune_each_step)) for weights_num in curr_weights_active]
@@ -228,21 +230,31 @@ def iterative_pruning(model, init_weights, mask, n, prune_each_step, X_train, y_
         # for each dense layer get curr_pruning_number of the lowest weights by magnitude and mark them with 0 in mask
         mask = update_mask(model, mask, curr_pruning_numbers)
 
-        print('\n\nIteration', iteration, '\n')
-        print('Remaining weights in each layer: ', [int(np.sum(m)) for m in mask], '\n\n')
+        percentage_of_remained_weights = (sum([int(np.sum(m)) for m in mask]) / model.count_params()) * 100
+        remained_weights.append(percentage_of_remained_weights)
+        print("\n\nIteration %d\nRemaining weights in each layer: [%s] ----- %.1f %% of all starting weights\n\n" %
+              (iteration, ', '.join([str(int(np.sum(m))) for m in mask]), percentage_of_remained_weights))
 
         # element-wise multiply new mask with init_weights and set that as new model weights
-        i = 0
-        for layer in model.layers:
-            if isinstance(layer, Dense):
-                new_weights = mask[i] * init_weights[i][0]
-                layer.set_weights([new_weights, init_weights[i][1]])
-                i += 1
+        if use_init_weights:
+            i = 0
+            for layer in model.layers:
+                if isinstance(layer, Dense):
+                    new_weights = mask[i] * init_weights[i][0]
+                    layer.set_weights([new_weights, init_weights[i][1]])
+                    i += 1
+        else:
+            i = 0
+            for layer in model.layers:
+                if isinstance(layer, Dense):
+                    new_weights = mask[i] * layer.get_weights()[0]
+                    layer.set_weights([new_weights, layer.get_weights()[1]])
+                    i += 1
 
         # train model with the same parameters as before just with different weights considering mask and save results
         acc = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, mask)
         accuracies.extend(acc)
-    return accuracies
+    return accuracies, list(map(lambda x: str(round(x, 1)) + ' %', remained_weights))
 
 
 if __name__ == '__main__':
@@ -255,19 +267,30 @@ if __name__ == '__main__':
 
     X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
 
-    model = simple_model(input_size, num_of_units, num_of_classes)
-
-    init_weights, mask = get_model_weights(model)
-
-    acc_train = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, mask)
-
-    # iterative pruning with lottery ticket hypothesis
     prune_share = 0.99   # share of weights we want to prune in each layer
-    n = 10   # number of steps to get to the sparsity wanted
+    n = 5   # number of steps to get to the sparsity wanted
     prune_each_step = prune_share_for_each_step(prune_share, n)
 
-    acc_pruning = iterative_pruning(model, init_weights, mask, n, prune_each_step,
-                                    X_train, y_train, X_test, y_test, num_of_epochs, batch_size)
+    # iterative pruning without changing weights with initial ones
+    model = simple_model(input_size, num_of_units, num_of_classes)
+    _, mask = get_model_weights(model)
+    acc_train_no_init = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, mask)
+    acc_pruning_no_init, _ = iterative_pruning(model, None, mask, n, prune_each_step, X_train, y_train, X_test,
+                                               y_test, num_of_epochs, batch_size, use_init_weights=False)
+    all_accuracies_no_init = acc_train_no_init + acc_pruning_no_init
 
-    plot_general(acc_train + acc_pruning, np.zeros(len(acc_train) + len(acc_pruning)), ['test accuracy', ''],
-                 'Original MNIST NN learning', 'epoch', 'accuracy (%)', [], 0, 0)
+    # iterative pruning with lottery ticket hypothesis
+    model = simple_model(input_size, num_of_units, num_of_classes)
+    init_weights, mask = get_model_weights(model)
+    acc_train = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, mask)
+    acc_pruning, remained_weights = iterative_pruning(model, init_weights, mask, n, prune_each_step,
+                                                      X_train, y_train, X_test, y_test, num_of_epochs, batch_size)
+    all_accuracies = acc_train + acc_pruning
+
+    plot_general(all_accuracies, all_accuracies_no_init, ['LT test accuracy', 'no LT test accuracy', '% of remaining weights'],
+                 'Lottery ticket iterative pruning with %s weights' % f'{model.count_params():,}', 'epoch', 'accuracy (%)',
+                 [i * num_of_epochs for i in range(n + 1)], min(all_accuracies + all_accuracies_no_init) - 2,
+                 max(all_accuracies + all_accuracies_no_init) + 2, text_strings=remained_weights)
+
+
+

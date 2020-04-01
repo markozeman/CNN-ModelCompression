@@ -69,7 +69,7 @@ def plot_accuracies_over_time(normal_accuracies, superposition_accuracies):
     plt.show()
 
 
-def plot_general(line_1, line_2, legend_lst, title, x_label, y_label, vertical_lines_x, vl_min, vl_max):
+def plot_general(line_1, line_2, legend_lst, title, x_label, y_label, vertical_lines_x, vl_min, vl_max, text_strings=None):
     """
     Plot two lines on the same plot with additional general information.
 
@@ -82,6 +82,7 @@ def plot_general(line_1, line_2, legend_lst, title, x_label, y_label, vertical_l
     :param vertical_lines_x: x values of where to draw vertical lines
     :param vl_min: vertical lines minimum y value
     :param vl_max: vertical lines maximum y value
+    :param text_strings: optional list of text strings to add to the bottom of vertical lines
     :return: None
     """
     plt.plot(line_1)
@@ -91,6 +92,8 @@ def plot_general(line_1, line_2, legend_lst, title, x_label, y_label, vertical_l
     plt.title(title)
     plt.xlabel(x_label)
     plt.ylabel(y_label)
+    for i in range(len(text_strings)):
+        plt.text(vertical_lines_x[i] + 0.25, vl_min, text_strings[i], color='r')
     plt.show()
 
 
