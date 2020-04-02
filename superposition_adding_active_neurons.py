@@ -95,7 +95,7 @@ def lr_scheduler(epoch, lr):
     elif decay_type == 'exponential':
         initial_lr = 0.0001
         k = 0.07
-        t = len(lr_over_time) % 10      # to start each new task with the same learning rate as the first one
+        t = len(lr_over_time) % num_of_epochs      # to start each new task with the same learning rate as the first one
         lr = initial_lr * exp(-k * t)
     return max(lr, 0.000001)    # don't let learning rate go to 0
 
@@ -135,7 +135,7 @@ def train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_si
     :param mode: string for learning mode, important for callbacks - possible values: 'normal', 'superposition'
     :param context_matrices: multidimensional numpy array with random context (binary superposition), only used when mode = 'superposition'
     :param task_index: index of current task, only used when mode = 'superposition'
-    :param saved_weights: weights of the model at the end of each task, only used when mode = 'real superposition'
+    :param saved_weights: parameter not used in this file
     :return: History object and 2 lists of test accuracies for every training epoch (normal, superposition)
     """
     test_callback = TestPerformanceCallback(X_test, y_test)
@@ -228,7 +228,7 @@ def get_context_matrices(num_of_units, num_of_classes, num_of_tasks):
     return context_matrices
 
 
-def normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, batch_size=32):
+def normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, input_size, num_of_classes, num_of_units, batch_size=32):
     """
     Train model for 'num_of_tasks' tasks, each task is a different permutation of input images.
     Check how accuracy for original images is changing through tasks using normal training.
@@ -240,6 +240,9 @@ def normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_
     :param y_test: test output labels
     :param num_of_epochs: number of epochs to train the model
     :param num_of_tasks: number of different tasks (permutations of original images)
+    :param input_size: image input size in pixels
+    :param num_of_classes: number of different classes/output labels
+    :param num_of_units: number of neurons in each hidden layer
     :param batch_size: batch size - number of samples per gradient update (default = 32)
     :return: list of test accuracies for 10 epochs for each task
     """
@@ -282,7 +285,7 @@ def context_multiplication(model, context_matrices, task_index):
         layer.set_weights([new_w, curr_w_bias])
 
 
-def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units, num_of_classes, num_of_tasks, batch_size=32):
+def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units, num_of_classes, num_of_tasks, input_size, batch_size=32):
     """
     Train model for 'num_of_tasks' tasks, each task is a different permutation of input images.
     Check how accuracy for original images is changing through tasks using superposition training.
@@ -296,6 +299,7 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
     :param num_of_units: number of neurons in each hidden layer
     :param num_of_classes: number of different classes/output labels
     :param num_of_tasks: number of different tasks (permutations of original images)
+    :param input_size: image input size in pixels
     :param batch_size: batch size - number of samples per gradient update (default = 32)
     :return: list of test accuracies for 10 epochs for each task (or validation accuracies for original task)
     """
@@ -332,17 +336,37 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
     return original_accuracies
 
 
+def get_mask(input_size, num_of_units, num_of_classes, curr_active_neurons):
+    """
+    Make mask list representing active neurons in simple NN model with 2 hidden layers.
+
+    :param input_size: image input size in pixels
+    :param num_of_units: number of neurons in each hidden layer
+    :param num_of_classes: number of different classes/output labels
+    :param curr_active_neurons: number of currently activated neurons in hidden layers
+    :return: list of binary 2D numpy arrays (1 - active weight, 0 - non active weight)
+    """
+    # make mask the right size with all zeros
+    mask = [np.zeros((np.prod(input_size), num_of_units)), np.zeros((num_of_units, num_of_units)), np.zeros((num_of_units, num_of_classes))]
+    # add ones to mask to represent currently active neurons
+    mask[0][:, :curr_active_neurons] = 1
+    mask[1][:curr_active_neurons, :curr_active_neurons] = 1
+    mask[2][:curr_active_neurons, :] = 1
+    return mask
+
+
 if __name__ == '__main__':
     input_size = (28, 28)
-    num_of_units = 1000
+    num_of_units = 1000     # not all units/neurons are active
     num_of_classes = 10
 
-    num_of_tasks = 8       # todo - change to 50
+    num_of_tasks = 3       # todo - change to 50
     num_of_epochs = 10
     batch_size = 600
 
     active_neurons_at_start = 100
-    neurons_added_for_each_task = 20
+    neurons_added_each_task = 20
+    assert active_neurons_at_start + ((num_of_tasks - 1) * neurons_added_each_task) <= num_of_units
 
     train_normal = True
     train_superposition = True
@@ -352,7 +376,8 @@ if __name__ == '__main__':
 
         model = simple_model(input_size, num_of_units, num_of_classes)
 
-        acc_normal = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, batch_size)
+        acc_normal = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, input_size,
+                                     num_of_classes, num_of_units, batch_size)
 
         if not train_superposition:
             plot_lr(lr_over_time)
@@ -365,7 +390,7 @@ if __name__ == '__main__':
         model = simple_model(input_size, num_of_units, num_of_classes)
 
         acc_superposition = superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units,
-                                                   num_of_classes, num_of_tasks, batch_size)
+                                                   num_of_classes, num_of_tasks, input_size, batch_size)
 
         if not train_normal:
             plot_lr(lr_over_time)
