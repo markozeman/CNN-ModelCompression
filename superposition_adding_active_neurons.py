@@ -13,10 +13,11 @@ class TestPerformanceCallback(Callback):
     """
     Callback class for testing normal model performance at the beginning of every epoch.
     """
-    def __init__(self, X_test, y_test):
+    def __init__(self, X_test, y_test, mask):
         super().__init__()
         self.X_test = X_test
         self.y_test = y_test
+        self.mask = mask
         self.accuracies = []
 
     def on_epoch_begin(self, epoch, logs=None):
@@ -24,18 +25,28 @@ class TestPerformanceCallback(Callback):
         loss, accuracy = model.evaluate(self.X_test[:1000], self.y_test[:1000], verbose=2)
         self.accuracies.append(accuracy * 100)
 
+    def on_batch_begin(self, batch, logs=None):
+        # use mask to zero out certain model weights
+        i = 0
+        for layer in model.layers:
+            if isinstance(layer, Dense):
+                new_weights = self.mask[i] * layer.get_weights()[0]
+                layer.set_weights([new_weights, layer.get_weights()[1]])
+                i += 1
+
 
 class TestSuperpositionPerformanceCallback(Callback):
     """
     Callback class for testing superposition model performance at the beginning of every epoch.
     """
-    def __init__(self, X_test, y_test, context_matrices, model, task_index):
+    def __init__(self, X_test, y_test, context_matrices, model, task_index, mask):
         super().__init__()
         self.X_test = X_test
         self.y_test = y_test
         self.context_matrices = context_matrices
         self.model = model
         self.task_index = task_index
+        self.mask = mask
         self.accuracies = []
 
     def on_epoch_begin(self, epoch, logs=None):
@@ -67,6 +78,14 @@ class TestSuperpositionPerformanceCallback(Callback):
 
             layer.set_weights([curr_w_matrices[i] @ context_inverse_multiplied, curr_bias_vectors[i]])
 
+        # use mask to zero out certain model weights
+        i = 0
+        for layer in self.model.layers:
+            if isinstance(layer, Dense):
+                new_weights = self.mask[i] * layer.get_weights()[0]
+                layer.set_weights([new_weights, layer.get_weights()[1]])
+                i += 1
+
         # evaluate only on 1.000 images (10% of all test images) to speed-up
         loss, accuracy = self.model.evaluate(self.X_test[:1000], self.y_test[:1000], verbose=2)
         self.accuracies.append(accuracy * 100)
@@ -74,6 +93,15 @@ class TestSuperpositionPerformanceCallback(Callback):
         # change model weights back (without bias node)
         for i, layer in enumerate(self.model.layers[1:]):  # first layer is Flatten so we skip it
             layer.set_weights([curr_w_matrices[i], curr_bias_vectors[i]])
+
+    def on_batch_begin(self, batch, logs=None):
+        # use mask to zero out certain model weights
+        i = 0
+        for layer in model.layers:
+            if isinstance(layer, Dense):
+                new_weights = self.mask[i] * layer.get_weights()[0]
+                layer.set_weights([new_weights, layer.get_weights()[1]])
+                i += 1
 
 
 lr_over_time = []   # global variable to store changing learning rates
@@ -119,7 +147,7 @@ def simple_model(input_size, num_of_units, num_of_classes):
     return model
 
 
-def train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size=32, validation_share=0.0,
+def train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, mask, batch_size=32, validation_share=0.0,
                 mode='normal', context_matrices=None, task_index=None, saved_weights=None):
     """
     Train and evaluate Keras model.
@@ -130,6 +158,7 @@ def train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_si
     :param X_test: test input data
     :param y_test: test output labels
     :param num_of_epochs: number of epochs to train the model
+    :param mask: list of binary 2D numpy arrays (1 - active weight, 0 - non active weight)
     :param batch_size: batch size - number of samples per gradient update (default = 32)
     :param validation_share: share of examples to be used for validation (default = 0)
     :param mode: string for learning mode, important for callbacks - possible values: 'normal', 'superposition'
@@ -138,8 +167,8 @@ def train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_si
     :param saved_weights: parameter not used in this file
     :return: History object and 2 lists of test accuracies for every training epoch (normal, superposition)
     """
-    test_callback = TestPerformanceCallback(X_test, y_test)
-    test_superposition_callback = TestSuperpositionPerformanceCallback(X_test, y_test, context_matrices, model, task_index)
+    test_callback = TestPerformanceCallback(X_test, y_test, mask)
+    test_superposition_callback = TestSuperpositionPerformanceCallback(X_test, y_test, context_matrices, model, task_index, mask)
     lr_callback = LearningRateScheduler(lr_scheduler)
 
     callbacks = [lr_callback]
@@ -228,7 +257,8 @@ def get_context_matrices(num_of_units, num_of_classes, num_of_tasks):
     return context_matrices
 
 
-def normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, input_size, num_of_classes, num_of_units, batch_size=32):
+def normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, input_size, num_of_classes,
+                    num_of_units, batch_size, active_neurons_at_start, neurons_added_each_task):
     """
     Train model for 'num_of_tasks' tasks, each task is a different permutation of input images.
     Check how accuracy for original images is changing through tasks using normal training.
@@ -243,13 +273,18 @@ def normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_
     :param input_size: image input size in pixels
     :param num_of_classes: number of different classes/output labels
     :param num_of_units: number of neurons in each hidden layer
-    :param batch_size: batch size - number of samples per gradient update (default = 32)
+    :param batch_size: batch size - number of samples per gradient update
+    :param active_neurons_at_start: number of active neurons in both hidden layers at the first task
+    :param neurons_added_each_task: number of newly activated neurons in both hidden layers for each new task
     :return: list of test accuracies for 10 epochs for each task
     """
     original_accuracies = []
 
+    curr_active_neurons = active_neurons_at_start
+    mask = get_mask(input_size, num_of_units, num_of_classes, curr_active_neurons)
+
     # first training task - original MNIST images
-    history, accuracies, _ = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1)
+    history, accuracies, _ = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, mask, batch_size, validation_share=0.1)
     original_accuracies.extend(accuracies)
 
     val_acc = np.array(history.history['val_accuracy']) * 100
@@ -258,8 +293,12 @@ def normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_
     # other training tasks - permuted MNIST data
     for i in range(num_of_tasks - 1):
         print("\n\n i: %d \n" % i)
+
+        curr_active_neurons += neurons_added_each_task
+        mask = get_mask(input_size, num_of_units, num_of_classes, curr_active_neurons)
+
         permuted_X_train = permute_images(X_train)
-        history, accuracies, _ = train_model(model, permuted_X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1)
+        history, accuracies, _ = train_model(model, permuted_X_train, y_train, X_test, y_test, num_of_epochs, mask, batch_size, validation_share=0.1)
         original_accuracies.extend(accuracies)
 
         val_acc = np.array(history.history['val_accuracy']) * 100
@@ -285,7 +324,8 @@ def context_multiplication(model, context_matrices, task_index):
         layer.set_weights([new_w, curr_w_bias])
 
 
-def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units, num_of_classes, num_of_tasks, input_size, batch_size=32):
+def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units, num_of_classes,
+                           num_of_tasks, input_size, batch_size, active_neurons_at_start, neurons_added_each_task):
     """
     Train model for 'num_of_tasks' tasks, each task is a different permutation of input images.
     Check how accuracy for original images is changing through tasks using superposition training.
@@ -300,7 +340,9 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
     :param num_of_classes: number of different classes/output labels
     :param num_of_tasks: number of different tasks (permutations of original images)
     :param input_size: image input size in pixels
-    :param batch_size: batch size - number of samples per gradient update (default = 32)
+    :param batch_size: batch size - number of samples per gradient update
+    :param active_neurons_at_start: number of active neurons in both hidden layers at the first task
+    :param neurons_added_each_task: number of newly activated neurons in both hidden layers for each new task
     :return: list of test accuracies for 10 epochs for each task (or validation accuracies for original task)
     """
     original_accuracies = []
@@ -309,9 +351,12 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
     # multiply random initialized weights with context matrices for each layer (without changing weights from bias node)
     # context_multiplication(model, context_matrices, 0)
 
+    curr_active_neurons = active_neurons_at_start
+    mask = get_mask(input_size, num_of_units, num_of_classes, curr_active_neurons)
+
     # first training task - original MNIST images
-    history, _, _ = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1,
-                                mode='superposition', context_matrices=context_matrices, task_index=0)
+    history, _, _ = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, mask, batch_size,
+                                validation_share=0.1, mode='superposition', context_matrices=context_matrices, task_index=0)
 
     val_acc = np.array(history.history['val_accuracy']) * 100
     print('\nValidation accuracies: ', 'first', val_acc)
@@ -322,12 +367,15 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
     for i in range(num_of_tasks - 1):
         print("\n\n i: %d \n" % i)
 
+        curr_active_neurons += neurons_added_each_task
+        mask = get_mask(input_size, num_of_units, num_of_classes, curr_active_neurons)
+
         # multiply current weights with context matrices for each layer (without changing weights from bias node)
         context_multiplication(model, context_matrices, i + 1)
 
         permuted_X_train = permute_images(X_train)
-        history, _, accuracies = train_model(model, permuted_X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1,
-                                             mode='superposition', context_matrices=context_matrices, task_index=i + 1)
+        history, _, accuracies = train_model(model, permuted_X_train, y_train, X_test, y_test, num_of_epochs, mask, batch_size,
+                                             validation_share=0.1, mode='superposition', context_matrices=context_matrices, task_index=i + 1)
         original_accuracies.extend(accuracies)
 
         val_acc = np.array(history.history['val_accuracy']) * 100
@@ -360,7 +408,7 @@ if __name__ == '__main__':
     num_of_units = 1000     # not all units/neurons are active
     num_of_classes = 10
 
-    num_of_tasks = 3       # todo - change to 50
+    num_of_tasks = 20
     num_of_epochs = 10
     batch_size = 600
 
@@ -377,7 +425,7 @@ if __name__ == '__main__':
         model = simple_model(input_size, num_of_units, num_of_classes)
 
         acc_normal = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, input_size,
-                                     num_of_classes, num_of_units, batch_size)
+                                     num_of_classes, num_of_units, batch_size, active_neurons_at_start, neurons_added_each_task)
 
         if not train_superposition:
             plot_lr(lr_over_time)
@@ -390,12 +438,17 @@ if __name__ == '__main__':
         model = simple_model(input_size, num_of_units, num_of_classes)
 
         acc_superposition = superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units,
-                                                   num_of_classes, num_of_tasks, input_size, batch_size)
+                                                   num_of_classes, num_of_tasks, input_size, batch_size,
+                                                   active_neurons_at_start, neurons_added_each_task)
 
         if not train_normal:
             plot_lr(lr_over_time)
             plot_accuracies_over_time(np.zeros(len(acc_superposition)), acc_superposition)
         else:
-            plot_accuracies_over_time(acc_normal, acc_superposition)
+            plot_general(acc_normal, acc_superposition, ['Baseline model', 'Superposition model', '# Active neurons'],
+                         'Normal vs. superposition training with adding active neurons for each new task (%d neurons in each hidden layer)' % num_of_units,
+                         'epoch', 'accuracy (%)', [i * num_of_epochs for i in range(num_of_tasks)],
+                         min(acc_normal + acc_superposition) - 2, max(acc_normal + acc_superposition) + 2,
+                         text_strings=[str(active_neurons_at_start + (i * neurons_added_each_task)) for i in range(num_of_tasks)])
 
 
