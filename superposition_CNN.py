@@ -243,7 +243,7 @@ def train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_si
 
 def prepare_data(num_of_classes):
     """
-    Normalize and prepare MNIST data to be ready for NN input.
+    Normalize and prepare MNIST data to be ready for CNN input.
 
     :param num_of_classes: number of output classes/labels
     :return:  X_train, y_train, X_test, y_test
