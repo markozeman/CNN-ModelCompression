@@ -1,5 +1,7 @@
 import numpy as np
 import tensorflow as tf
+from keras.engine.saving import load_model
+from keras.models import Model
 from keras import Sequential
 from keras.layers import Conv2D, MaxPooling2D, Flatten, Dense
 from keras.optimizers import Adam
@@ -30,6 +32,7 @@ def make_disjoint_datasets(dataset_fun=get_CIFAR_100):
 
     :param dataset_fun: function that returns specific dataset (default is CIFAR-100 dataset)
     :return: list of 10 disjoint datasets with corresponding train and test set
+             [(X_train, y_train, X_test, y_test), (X_train, y_train, X_test, y_test), ...]
     """
     X_train, y_train, X_test, y_test = dataset_fun()
     train_sets = disjoint_datasets(X_train, y_train)
@@ -37,7 +40,7 @@ def make_disjoint_datasets(dataset_fun=get_CIFAR_100):
     return list(map(lambda x: (*x[0], *x[1]), zip(train_sets, test_sets)))
 
 
-def simple_model(input_size, num_of_classes):
+def simple_cnn(input_size, num_of_classes):
     """
     Create simple CNN model.
 
@@ -49,8 +52,29 @@ def simple_model(input_size, num_of_classes):
     model.add(Conv2D(32, kernel_size=(3, 3), activation='relu', input_shape=input_size))
     model.add(Conv2D(64, kernel_size=(3, 3), activation='relu'))
     model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Conv2D(32, kernel_size=(3, 3), activation='relu'))
+    model.add(Conv2D(64, kernel_size=(3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
     model.add(Flatten())
     model.add(Dense(128, activation='relu'))
+    model.add(Dense(num_of_classes, activation='softmax'))
+    model.compile(optimizer=Adam(learning_rate=0.0001), loss='categorical_crossentropy', metrics=['accuracy'])
+    model.summary()
+    return model
+
+
+def simple_nn(input_size, num_of_units, num_of_classes):
+    """
+    Create simple NN model with two hidden layers, each has 'num_of_units' neurons.
+
+    :param input_size: vector input size
+    :param num_of_units: number of neurons in each hidden layer
+    :param num_of_classes: number of different classes/output labels
+    :return: Keras model instance
+    """
+    model = Sequential()
+    model.add(Dense(num_of_units, activation='relu', input_shape=input_size))
+    model.add(Dense(num_of_units, activation='relu'))
     model.add(Dense(num_of_classes, activation='softmax'))
     model.compile(optimizer=Adam(learning_rate=0.0001), loss='categorical_crossentropy', metrics=['accuracy'])
     model.summary()
@@ -92,19 +116,45 @@ def train_CNNs(datasets, input_size, num_of_classes, num_of_epochs, batch_size):
     :param input_size: image input shape
     :param num_of_classes: number of different classes/output labels
     :param num_of_epochs: number of epochs to train each model
-    :param batch_size:  batch size - number of samples per gradient update
+    :param batch_size: batch size - number of samples per gradient update
     :return: None
     """
+    i = 0
+    for X_train, y_train, X_test, y_test in datasets:
+        X_train, y_train, X_test, y_test = prepare_data(X_train, y_train, X_test, y_test, input_size)
+        model = simple_cnn(input_size, num_of_classes)
+        model.fit(X_train, y_train, epochs=num_of_epochs, batch_size=batch_size, validation_split=0.1, verbose=2)
+        # model.save('cifar-100_disjoint_dataset_models/cnn_model_%d.h5' % i)
+        i += 1
+
+
+def get_feature_vector_representation(datasets, input_size):
+    """
+    Load trained CNN models for 'datasets' and get representation vectors for all images
+    after convolutional and pooling layers. Train and test labels do not change.
+
+    :param datasets: list of disjoint datasets with corresponding train and test set
+    :param input_size: image input shape
+    :return: 'datasets' images represented as feature vectors
+             [(X_train_vectors, y_train, X_test_vectors, y_test), (X_train_vectors, y_train, X_test_vectors, y_test), ...]
+    """
+    i = 0
+    vectors = []
     for X_train, y_train, X_test, y_test in datasets:
         X_train, y_train, X_test, y_test = prepare_data(X_train, y_train, X_test, y_test, input_size)
 
-        model = simple_model(input_size, num_of_classes)
-        model.fit(X_train, y_train, epochs=num_of_epochs, batch_size=batch_size, validation_split=0.1, verbose=2)
+        model = load_model('cifar-100_disjoint_dataset_models/cnn_model_%d.h5' % i)
+        i += 1
 
-        # save model
+        # 6 is the index of Flatten layer which outputs feature vector after convolution and pooling
+        intermediate_layer_model = Model(inputs=model.input, outputs=model.layers[6].output)
 
-        break
+        X_train_vectors = intermediate_layer_model.predict(X_train)
+        X_test_vectors = intermediate_layer_model.predict(X_test)
 
+        vectors.append((X_train_vectors, y_train, X_test_vectors, y_test))
+
+    return vectors
 
 
 if __name__ == '__main__':
@@ -127,9 +177,19 @@ if __name__ == '__main__':
     num_of_epochs = 50
     batch_size = 50
 
-    train_CNNs(disjoint_sets, input_size, num_of_classes, num_of_epochs, batch_size)
+    # train_CNNs(disjoint_sets, input_size, num_of_classes, num_of_epochs, batch_size)
+
+    datasets_vectors = get_feature_vector_representation(disjoint_sets, input_size)
 
 
+
+    ### Notes:
+    # num_of_epochs = 75,  batch_size = 50
+    # average end validation accuracy: 0.65 --> simple_cnn function
+    # average end validation accuracy: 0.70 --> example model at: https://keras.io/examples/cifar10_cnn/
+
+    # vector of length 1600 representing each image
+    # around 25% of feature vectors values are 0
 
 
     # todo
@@ -138,10 +198,9 @@ if __name__ == '__main__':
     # for each of CIFAR-10 datasets build and train separate CNN
     # for each of 10 CNN models extract weights from convolutional layers only
     # put all images through corresponding convolutional layers to get vector representation
+
     # this vector representation is an input to the multilayer perceptron
     # consecutively train each of 10 tasks in the network with 1.000 neurons in both hidden layers to the desirable validation accuracy
     # compare how test accuracy on the first CIFAR-10 task is decreasing with or without using superposition
-
-
 
 
