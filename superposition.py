@@ -167,7 +167,7 @@ def lr_scheduler(epoch, lr):
     if decay_type == 'linear':
         lr -= 10 ** -5
     elif decay_type == 'exponential':
-        initial_lr = 0.00001
+        initial_lr = 0.0001
         k = 0.07
         t = len(lr_over_time) % 10      # to start each new task with the same learning rate as the first one
         lr = initial_lr * exp(-k * t)
@@ -202,7 +202,7 @@ def simple_model(input_size, num_of_units, num_of_classes):
     model.add(Dense(num_of_units, activation='relu'))
     model.add(Dense(num_of_units, activation='relu'))
     model.add(Dense(num_of_classes, activation='softmax'))
-    model.compile(optimizer=Adam(learning_rate=0.00001), loss='categorical_crossentropy', metrics=['accuracy'])
+    model.compile(optimizer=Adam(learning_rate=0.0001), loss='categorical_crossentropy', metrics=['accuracy'])
     model.summary()
     return model
 
@@ -497,7 +497,7 @@ if __name__ == '__main__':
     num_of_units = 200     # todo - change to 1024
     num_of_classes = 10
 
-    num_of_tasks = 20       # todo - change to 50
+    num_of_tasks = 40       # todo - change to 50
     num_of_epochs = 10
     batch_size = 600
 

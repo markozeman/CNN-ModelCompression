@@ -42,3 +42,18 @@ def multiply_kernels_with_context(curr_w, vector):
     new_w = np.array([mat_weights @ mat_context for mat_weights, mat_context in zip(curr_w_reshaped, context_matrices)])
     return np.reshape(new_w, curr_w.shape)
 
+
+def zero_out_vector(vec, proportion_0):
+    """
+    Zero out 'proportion_0' values in vector 'vec' with the lowest absolute magnitude.
+
+    :param vec: vector of numeric values (numpy array)
+    :param proportion_0: share of zeros we want in vector 'vec' (value between 0 and 1)
+    :return: new vector with specified proportion of 0
+    """
+    vec_sorted = sorted(np.absolute(vec))
+    abs_threshold = vec_sorted[round(len(vec) * proportion_0)]
+    mask = (np.absolute(vec) > abs_threshold).astype(float)
+    return mask * vec
+
+

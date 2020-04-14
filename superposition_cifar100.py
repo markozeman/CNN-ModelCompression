@@ -9,7 +9,9 @@ from keras.optimizers import Adam
 from datasets import get_CIFAR_100
 from math import floor, exp
 from keras.utils.np_utils import to_categorical
-from plots import plot_lr, plot_accuracies_over_time
+from pre_trained_CNNs import ResNet50_model
+from help_functions import zero_out_vector
+from plots import plot_lr, plot_accuracies_over_time, plot_weights_histogram, show_image
 
 
 class TestPerformanceCallback(Callback):
@@ -215,13 +217,14 @@ def train_CNNs(datasets, input_size, num_of_classes, num_of_epochs, batch_size):
         i += 1
 
 
-def get_feature_vector_representation(datasets, input_size):
+def get_feature_vector_representation(datasets, input_size, proportion_0=0):
     """
     Load trained CNN models for 'datasets' and get representation vectors for all images
     after convolutional and pooling layers. Train and test labels do not change.
 
     :param datasets: list of disjoint datasets with corresponding train and test set
     :param input_size: image input shape
+    :param proportion_0: share of zeros we want in vector to make it more sparse, default=0 which does not change original vector
     :return: 'datasets' images represented as feature vectors
              [(X_train_vectors, y_train, X_test_vectors, y_test), (X_train_vectors, y_train, X_test_vectors, y_test), ...]
     """
@@ -238,6 +241,36 @@ def get_feature_vector_representation(datasets, input_size):
 
         X_train_vectors = intermediate_layer_model.predict(X_train)
         X_test_vectors = intermediate_layer_model.predict(X_test)
+
+        # # make input even more sparse, with 'proportion_0' of zero values
+        for index in range(X_train_vectors.shape[0]):
+            X_train_vectors[index] = zero_out_vector(X_train_vectors[index], proportion_0)
+        for index in range(X_test_vectors.shape[0]):
+            X_test_vectors[index] = zero_out_vector(X_test_vectors[index], proportion_0)
+        # # plot_weights_histogram(X_train_vectors[0], 30)  # to test new weights distribution
+
+        vectors.append((X_train_vectors, y_train, X_test_vectors, y_test))
+
+    return vectors
+
+
+def get_feature_vector_representation_ResNet50(datasets, input_size):
+    """
+    Use pre-trained ResNet50 CNN model for 'datasets' and get representation vectors for all images
+    after convolutional and pooling layers. Train and test labels do not change.
+
+    :param datasets: list of disjoint datasets with corresponding train and test set
+    :param input_size: image input shape
+    :return: 'datasets' images represented as feature vectors
+             [(X_train_vectors, y_train, X_test_vectors, y_test), (X_train_vectors, y_train, X_test_vectors, y_test), ...]
+    """
+    vectors = []
+    model = ResNet50_model(input_size, 'max')
+    for X_train, y_train, X_test, y_test in datasets:
+        X_train, y_train, X_test, y_test = prepare_data(X_train, y_train, X_test, y_test, input_size)
+
+        X_train_vectors = model.predict(X_train)
+        X_test_vectors = model.predict(X_test)
 
         vectors.append((X_train_vectors, y_train, X_test_vectors, y_test))
 
@@ -398,7 +431,8 @@ if __name__ == '__main__':
     # batch_size = 50
     # train_CNNs(disjoint_sets, input_size, num_of_classes, num_of_epochs, batch_size)
 
-    datasets_vectors = get_feature_vector_representation(disjoint_sets, input_size)
+    datasets_vectors = get_feature_vector_representation(disjoint_sets, input_size, proportion_0=0)
+    # datasets_vectors = get_feature_vector_representation_ResNet50(disjoint_sets, input_size)
 
     input_size = datasets_vectors[0][0].shape[1]
     num_of_units = 1000
@@ -439,6 +473,6 @@ if __name__ == '__main__':
     # average end validation accuracy: 0.65 --> simple_cnn function
     # average end validation accuracy: 0.70 --> example model at: https://keras.io/examples/cifar10_cnn/
 
-    # vector of length 1600 representing each image
+    # vector of length 1600 representing each image (all values are non-negative)
     # around 25% of feature vectors values are 0
 
