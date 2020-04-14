@@ -47,10 +47,11 @@ def deleting_neurons_1_task(X_train, y_train, input_size, num_of_units, num_of_c
         history = train_model(model, X_train, y_train, epochs, batch_size=batch_size, validation_share=0.1)
         val_acc_compression.extend(np.array(history.history['val_accuracy']) * 100)
 
-    plot_general(val_acc_normal, val_acc_compression, ['normal val. acc.', 'online compression val. acc.'],
+    plot_general(val_acc_normal, val_acc_compression, ['normal val. acc.', 'online compression val. acc.', '# neurons left in hidden layers'],
                  'Comparing validation accuracy in normal training and online compression training', 'epoch',
-                 'validation accuracy (%)', [epochs * (i + 1) for i in range(len(neurons_deleted))],
-                 min(val_acc_compression), max(val_acc_normal))
+                 'validation accuracy (%)', [epochs * i for i in range(len(neurons_deleted) + 1)],
+                 min(val_acc_compression), max(val_acc_normal),
+                 text_strings=[str(num_of_units - sum(neurons_deleted[:i])) for i in range(len(neurons_deleted) + 1)])
 
 
 if __name__ == '__main__':
@@ -58,13 +59,12 @@ if __name__ == '__main__':
     num_of_units = 1024
     num_of_classes = 10
 
-    num_of_tasks = 1       # todo - change to 50
-    num_of_epochs = 20
+    num_of_tasks = 1
+    num_of_epochs = 50
     batch_size = 600
 
-    if num_of_tasks == 1:
-        X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
+    X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
 
-        deleting_neurons_1_task(X_train, y_train, input_size, num_of_units, num_of_classes, num_of_epochs, batch_size)
+    deleting_neurons_1_task(X_train, y_train, input_size, num_of_units, num_of_classes, num_of_epochs, batch_size)
 
 
