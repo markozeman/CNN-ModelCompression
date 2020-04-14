@@ -67,6 +67,4 @@ if __name__ == '__main__':
 
         deleting_neurons_1_task(X_train, y_train, input_size, num_of_units, num_of_classes, num_of_epochs, batch_size)
 
-    else:
-        pass
 

@@ -92,8 +92,9 @@ def plot_general(line_1, line_2, legend_lst, title, x_label, y_label, vertical_l
     plt.title(title)
     plt.xlabel(x_label)
     plt.ylabel(y_label)
-    for i in range(len(text_strings)):
-        plt.text(vertical_lines_x[i] + 0.25, vl_min, text_strings[i], color='r')
+    if text_strings is not None:
+        for i in range(len(text_strings)):
+            plt.text(vertical_lines_x[i] + 0.25, vl_min, text_strings[i], color='r')
     plt.show()
 
 

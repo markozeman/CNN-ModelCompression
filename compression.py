@@ -186,9 +186,8 @@ if __name__ == '__main__':
 
     # todo
     # size of each weight in bits --> 'numpy.float32'
-    # test superposition on CNNs
 
+    # Notes:
     # not a big difference between pruning random neurons or pruning neurons with the smallest std
-    # show last plot in plots folder
     # usually in NN weight matrices have normal distributions with variance increasing towards output layer
 
