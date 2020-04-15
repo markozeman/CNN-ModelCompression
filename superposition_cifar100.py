@@ -45,7 +45,9 @@ class TestSuperpositionPerformanceCallback(Callback):
 
     def on_epoch_begin(self, epoch, logs=None):
         if self.task_index == 0:    # first task - we did not use context yet
-            self.accuracies.append(-1)
+            # evaluate on test images of the first task
+            loss, accuracy = self.model.evaluate(self.X_test, self.y_test, verbose=2)
+            self.accuracies.append(accuracy * 100)
             return
 
         # save current model weights (without bias node)
@@ -384,13 +386,12 @@ def superposition_training(model, datasets, num_of_epochs, num_of_units, num_of_
 
     # first training task - 10 classes of CIFAR-100 dataset
     X_train, y_train, X_test, y_test = datasets[0]  # these X_test and y_test are used for testing all tasks
-    history, _, _ = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1,
+    history, _, accuracies = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1,
                                 mode='superposition', context_matrices=context_matrices, task_index=0)
+    original_accuracies.extend(accuracies)
 
     val_acc = np.array(history.history['val_accuracy']) * 100
     print('\nValidation accuracies: ', 'first', val_acc)
-
-    original_accuracies.extend(val_acc)
 
     # other training tasks
     for i in range(num_of_tasks - 1):

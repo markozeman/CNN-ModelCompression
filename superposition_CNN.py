@@ -47,7 +47,9 @@ class TestSuperpositionPerformanceCallback(Callback):
 
     def on_epoch_begin(self, epoch, logs=None):
         if self.task_index == 0:    # first task (original MNIST images) - we did not use context yet
-            self.accuracies.append(-1)
+            # evaluate only on 1.000 images (10% of all test images) to speed-up
+            loss, accuracy = self.model.evaluate(self.X_test[:1000], self.y_test[:1000], verbose=2)
+            self.accuracies.append(accuracy * 100)
             return
 
         # save current model weights (without bias node)
@@ -409,13 +411,12 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
     # context_multiplication(model, context_matrices, 0)
 
     # first training task - original MNIST images
-    history, _, _, _ = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1,
+    history, _, accuracies, _ = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1,
                                    mode='superposition', context_matrices=context_matrices, task_index=0)
+    original_accuracies.extend(accuracies)
 
     val_acc = np.array(history.history['val_accuracy']) * 100
     print('\nValidation accuracies: ', 'first', val_acc)
-
-    original_accuracies.extend(val_acc)
 
     # other training tasks - permuted MNIST data
     for i in range(num_of_tasks - 1):
@@ -510,11 +511,11 @@ if __name__ == '__main__':
     num_of_units = 1024
     num_of_classes = 10
 
-    num_of_tasks = 5       # todo - change to 50
+    num_of_tasks = 10       # todo - change to 50
     num_of_epochs = 10
     batch_size = 600
 
-    train_normal = False
+    train_normal = True
     train_superposition = True
 
     if train_normal:
