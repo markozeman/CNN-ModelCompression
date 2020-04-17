@@ -219,7 +219,7 @@ def train_CNNs(datasets, input_size, num_of_classes, num_of_epochs, batch_size):
         i += 1
 
 
-def get_feature_vector_representation(datasets, input_size, proportion_0=0):
+def get_feature_vector_representation(datasets, input_size, proportion_0=0.0):
     """
     Load trained CNN models for 'datasets' and get representation vectors for all images
     after convolutional and pooling layers. Train and test labels do not change.
