@@ -66,7 +66,7 @@ class TestSuperpositionPerformanceCallback(Callback):
                 context_inverse_multiplied = np.multiply(context_inverse_multiplied, np.diagonal(self.context_matrices[task_i][i]))
             context_inverse_multiplied = np.diag(context_inverse_multiplied)
 
-            layer.set_weights([curr_w_matrices[i] @ context_inverse_multiplied, curr_bias_vectors[i]])
+            layer.set_weights([context_inverse_multiplied @ curr_w_matrices[i], curr_bias_vectors[i]])  # todo: changed here
 
         # evaluate on test images of the first task
         loss, accuracy = self.model.evaluate(self.X_test, self.y_test, verbose=2)
@@ -256,29 +256,6 @@ def get_feature_vector_representation(datasets, input_size, proportion_0=0.0):
     return vectors
 
 
-def get_feature_vector_representation_ResNet50(datasets, input_size):
-    """
-    Use pre-trained ResNet50 CNN model for 'datasets' and get representation vectors for all images
-    after convolutional and pooling layers. Train and test labels do not change.
-
-    :param datasets: list of disjoint datasets with corresponding train and test set
-    :param input_size: image input shape
-    :return: 'datasets' images represented as feature vectors
-             [(X_train_vectors, y_train, X_test_vectors, y_test), (X_train_vectors, y_train, X_test_vectors, y_test), ...]
-    """
-    vectors = []
-    model = ResNet50_model(input_size, 'max')
-    for X_train, y_train, X_test, y_test in datasets:
-        X_train, y_train, X_test, y_test = prepare_data(X_train, y_train, X_test, y_test, input_size)
-
-        X_train_vectors = model.predict(X_train)
-        X_test_vectors = model.predict(X_test)
-
-        vectors.append((X_train_vectors, y_train, X_test_vectors, y_test))
-
-    return vectors
-
-
 def train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size=32, validation_share=0.0,
                 mode='normal', context_matrices=None, task_index=None):
     """
@@ -325,7 +302,7 @@ def context_multiplication(model, context_matrices, task_index):
         curr_w = layer.get_weights()[0]
         curr_w_bias = layer.get_weights()[1]
 
-        new_w = curr_w @ context_matrices[task_index][i]
+        new_w = context_matrices[task_index][i] @ curr_w    # todo: changed here
         layer.set_weights([new_w, curr_w_bias])
 
 
@@ -365,6 +342,37 @@ def normal_training(model, datasets, num_of_epochs, num_of_tasks, batch_size=32)
     return original_accuracies
 
 
+def random_binary_vector(size):
+    """
+    Create a vector of 'size' length consisting only of numbers -1 and 1 (approximately 50% each).
+
+    :param size: length of the created vector
+    :return: binary numpy vector with values -1 or 1
+    """
+    vec = np.random.uniform(-1, 1, size)
+    vec[vec < 0] = -1
+    vec[vec >= 0] = 1
+    return vec
+
+
+def get_context_matrices(num_of_units, num_of_classes, num_of_tasks):
+    """
+    Get random context matrices for neural network that uses binary superposition as a context.
+
+    :param num_of_units: number of neurons in each hidden layer
+    :param num_of_classes: number of different classes/output labels
+    :param num_of_tasks: number of different tasks (permutations of original images)
+    :return: multidimensional numpy array with random context (binary superposition)
+    """
+    context_matrices = []
+    for i in range(num_of_tasks):
+        C1 = np.diag(random_binary_vector(1600))    # todo: changed here
+        C2 = np.diag(random_binary_vector(num_of_units))    # todo: changed here
+        C3 = np.diag(random_binary_vector(num_of_units))    # todo: changed here
+        context_matrices.append([C1, C2, C3])
+    return context_matrices
+
+
 def superposition_training(model, datasets, num_of_epochs, num_of_units, num_of_classes, num_of_tasks, batch_size=32):
     """
     Train model for 'num_of_tasks' tasks, each task is a different disjoint set of CIFAR-100 images.
@@ -379,8 +387,6 @@ def superposition_training(model, datasets, num_of_epochs, num_of_units, num_of_
     :param batch_size: batch size - number of samples per gradient update (default = 32)
     :return: list of test accuracies for 10 epochs for each task (or validation accuracies for original task)
     """
-    from superposition import get_context_matrices
-
     original_accuracies = []
     context_matrices = get_context_matrices(num_of_units, num_of_classes, num_of_tasks)
 
@@ -432,7 +438,7 @@ if __name__ == '__main__':
     # batch_size = 50
     # train_CNNs(disjoint_sets, input_size, num_of_classes, num_of_epochs, batch_size)
 
-    datasets_vectors = get_feature_vector_representation(disjoint_sets, input_size, proportion_0=0)
+    datasets_vectors = get_feature_vector_representation(disjoint_sets, input_size, proportion_0=0.0)
     # datasets_vectors = get_feature_vector_representation_ResNet50(disjoint_sets, input_size)
 
     input_size = datasets_vectors[0][0].shape[1]
@@ -467,13 +473,4 @@ if __name__ == '__main__':
         else:
             plot_accuracies_over_time(acc_normal, acc_superposition)
 
-
-
-    ### Notes:
-    # num_of_epochs = 75,  batch_size = 50
-    # average end validation accuracy: 0.65 --> simple_cnn function
-    # average end validation accuracy: 0.70 --> example model at: https://keras.io/examples/cifar10_cnn/
-
-    # vector of length 1600 representing each image (all values are non-negative)
-    # around 25% of feature vectors values are 0
 

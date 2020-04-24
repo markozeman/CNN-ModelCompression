@@ -75,7 +75,7 @@ class TestSuperpositionPerformanceCallback(Callback):
                 context_inverse_multiplied = np.multiply(context_inverse_multiplied, np.diagonal(self.context_matrices[task_i][i]))
             context_inverse_multiplied = np.diag(context_inverse_multiplied)
 
-            layer.set_weights([curr_w_matrices[i] @ context_inverse_multiplied, curr_bias_vectors[i]])
+            layer.set_weights([context_inverse_multiplied @ curr_w_matrices[i], curr_bias_vectors[i]])  # todo: changed here
 
         # evaluate only on 1.000 images (10% of all test images) to speed-up
         loss, accuracy = self.model.evaluate(self.X_test[:1000], self.y_test[:1000], verbose=2)
@@ -314,13 +314,9 @@ def get_context_matrices(num_of_units, num_of_classes, num_of_tasks):
     """
     context_matrices = []
     for i in range(num_of_tasks):
-        # C1 = shift_matrix_columns(np.diag(random_binary_vector(num_of_units)), i)
-        # C2 = shift_matrix_columns(np.diag(random_binary_vector(num_of_units)), i)
-        # C3 = shift_matrix_columns(np.diag(random_binary_vector(num_of_classes)), i)
-
-        C1 = np.diag(random_binary_vector(num_of_units))
-        C2 = np.diag(random_binary_vector(num_of_units))
-        C3 = np.diag(random_binary_vector(num_of_classes))
+        C1 = np.diag(random_binary_vector(784))     # todo: changed here
+        C2 = np.diag(random_binary_vector(num_of_units))    # todo: changed here
+        C3 = np.diag(random_binary_vector(num_of_units))    # todo: changed here
         context_matrices.append([C1, C2, C3])
     return context_matrices
 
@@ -375,7 +371,7 @@ def context_multiplication(model, context_matrices, task_index):
         curr_w = layer.get_weights()[0]
         curr_w_bias = layer.get_weights()[1]
 
-        new_w = curr_w @ context_matrices[task_index][i]
+        new_w = context_matrices[task_index][i] @ curr_w    # todo: changed here
         layer.set_weights([new_w, curr_w_bias])
 
 
@@ -428,90 +424,22 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
     return original_accuracies
 
 
-def real_superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units, num_of_classes, num_of_tasks, batch_size=32):
-    """
-    Train model for 'num_of_tasks' tasks, each task is a different permutation of input images.
-    Check how accuracy for original images is changing through tasks using real superposition training.
-
-    :param model: Keras model instance
-    :param X_train: train input data
-    :param y_train: train output labels
-    :param X_test: test input data
-    :param y_test: test output labels
-    :param num_of_epochs: number of epochs to train the model
-    :param num_of_units: number of neurons in each hidden layer
-    :param num_of_classes: number of different classes/output labels
-    :param num_of_tasks: number of different tasks (permutations of original images)
-    :param batch_size: batch size - number of samples per gradient update (default = 32)
-    :return: list of test accuracies for 10 epochs for each task
-    """
-    init_weights = [layer.get_weights() for layer in model.layers[1:]]   # first layer is Flatten so we skip it
-
-    original_accuracies = []
-    saved_weights = []   # saved weights at the end of each task
-    context_matrices = get_context_matrices(num_of_units, num_of_classes, num_of_tasks)
-
-    # # multiply random initialized weights with context matrices for each layer (without changing weights from bias node)
-    # context_multiplication(model, context_matrices, 0)
-
-    history, _, _, accuracies = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1,
-                                            mode='real superposition', context_matrices=context_matrices, saved_weights=saved_weights)
-
-    # multiply trained weights with context matrices for each layer (without changing weights from bias node)
-    context_multiplication(model, context_matrices, 0)
-
-    original_accuracies.extend(accuracies)
-    saved_weights.append([layer.get_weights() for layer in model.layers[1:]])   # save weights at the end of training
-
-    val_acc = np.array(history.history['val_accuracy']) * 100
-    print('\nValidation accuracies: ', 'first', val_acc)
-
-    # other training tasks - permuted MNIST data
-    for i in range(num_of_tasks - 1):
-        print("\n\n i: %d \n" % i)
-
-        # set model weights to the same weights as the first model was initialized to
-        for index, layer in enumerate(model.layers[1:]):
-            layer.set_weights(init_weights[index])
-
-        # # multiply current weights with context matrices for each layer (without changing weights from bias node)
-        # context_multiplication(model, context_matrices, i + 1)
-
-        permuted_X_train = permute_images(X_train)
-        history, _, _, accuracies = train_model(model, permuted_X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1,
-                                                mode='real superposition', context_matrices=context_matrices, saved_weights=saved_weights)
-
-        # multiply trained weights with context matrices for each layer (without changing weights from bias node)
-        context_multiplication(model, context_matrices, i + 1)
-
-        original_accuracies.extend(accuracies)
-        saved_weights.append([layer.get_weights() for layer in model.layers[1:]])  # save weights at the end of training
-
-        val_acc = np.array(history.history['val_accuracy']) * 100
-        print('\nValidation accuracies: ', i, val_acc)
-
-    return original_accuracies
-
-
 if __name__ == '__main__':
     input_size = (28, 28)
-    num_of_units = 1024     # todo - change to 1024
+    num_of_units = 1000     # todo - change to 1024
     num_of_classes = 10
 
-    num_of_tasks = 5       # todo - change to 50
+    num_of_tasks = 50       # todo - change to 50
     num_of_epochs = 10
     batch_size = 600
 
     train_normal = True
     train_superposition = True
-    train_real_superposition = False
 
     if train_normal:
         X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
 
         model = simple_model(input_size, num_of_units, num_of_classes)
-        # model = load_model('saved_data/nn_model_compressed_20x.h5')
-        # model.compile(optimizer=Adam(learning_rate=0.00001), loss='categorical_crossentropy', metrics=['accuracy'])
 
         acc_normal = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, batch_size)
 
@@ -524,8 +452,6 @@ if __name__ == '__main__':
         X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
 
         model = simple_model(input_size, num_of_units, num_of_classes)
-        # model = load_model('saved_data/nn_model_compressed_20x.h5')
-        # model.compile(optimizer=Adam(learning_rate=0.00001), loss='categorical_crossentropy', metrics=['accuracy'])
 
         acc_superposition = superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units,
                                                    num_of_classes, num_of_tasks, batch_size)
@@ -535,17 +461,4 @@ if __name__ == '__main__':
             plot_accuracies_over_time(np.zeros(len(acc_superposition)), acc_superposition)
         else:
             plot_accuracies_over_time(acc_normal, acc_superposition)
-
-    if train_real_superposition:
-        lr_over_time = []  # re-initiate learning rate
-        X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
-
-        model = simple_model(input_size, num_of_units, num_of_classes)
-
-        acc_real_superposition = real_superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs,
-                                                             num_of_units, num_of_classes, num_of_tasks, batch_size)
-
-        plot_lr(lr_over_time)
-        # accuracies saved only on the end of each training task, thus 10 times less points on the plot
-        plot_accuracies_over_time(np.zeros(len(acc_real_superposition)), acc_real_superposition)
 

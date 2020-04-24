@@ -95,7 +95,7 @@ class TestSuperpositionPerformanceCallback(Callback):
                         context_inverse_multiplied = np.multiply(context_inverse_multiplied, np.diagonal(self.context_matrices[task_i][i - 2]))
                     context_inverse_multiplied = np.diag(context_inverse_multiplied)
 
-                    layer.set_weights([curr_w_matrices[i - 2] @ context_inverse_multiplied, curr_bias_vectors[i - 2]])
+                    layer.set_weights([context_inverse_multiplied @ curr_w_matrices[i - 2], curr_bias_vectors[i - 2]])  # todo: changed here
 
         # evaluate only on 1.000 images (10% of all test images) to speed-up
         loss, accuracy = self.model.evaluate(self.X_test[:1000], self.y_test[:1000], verbose=2)
@@ -147,7 +147,7 @@ def simple_model(input_size, num_of_classes):
     model.add(Conv2D(64, kernel_size=(3, 3), activation='relu'))
     model.add(MaxPooling2D(pool_size=(2, 2)))
     model.add(Flatten())
-    model.add(Dense(128, activation='relu'))
+    model.add(Dense(128, activation='relu'))   # todo: try bigger number of units
     model.add(Dense(num_of_classes, activation='softmax'))
     model.compile(optimizer=Adam(learning_rate=0.0001), loss='categorical_crossentropy', metrics=['accuracy'])
     model.summary()
@@ -219,8 +219,8 @@ def get_context_matrices(model):
         C1 = random_binary_array(kernel_size * kernel_size * tensor_width * num_of_conv_layers)     # conv layer
         _, kernel_size, tensor_width, num_of_conv_layers = context_shapes[1]
         C2 = random_binary_array(kernel_size * kernel_size * tensor_width * num_of_conv_layers)     # conv layer
-        C3 = np.diag(random_binary_array(context_shapes[2][1]))   # dense layer
-        C4 = np.diag(random_binary_array(context_shapes[3][1]))   # dense layer
+        C3 = np.diag(random_binary_array(context_shapes[2][0]))  # dense layer  # todo: changed here
+        C4 = np.diag(random_binary_array(context_shapes[3][0]))  # dense layer  # todo: changed here
         context_matrices.append([C1, C2, C3, C4])
     return context_matrices
 
@@ -242,7 +242,7 @@ def context_multiplication(model, context_matrices, task_index):
             if i < 2:   # conv layer
                 new_w = np.reshape(np.multiply(curr_w.flatten(), context_matrices[task_index][i]), curr_w.shape)
             else:    # dense layer
-                new_w = curr_w @ context_matrices[task_index][i - 2]    # -2 because of Flatten and MaxPooling layers
+                new_w = context_matrices[task_index][i - 2] @ curr_w  # -2 because of Flatten and MaxPooling layers    # todo: changed here
 
             layer.set_weights([new_w, curr_w_bias])
 
@@ -350,11 +350,11 @@ if __name__ == '__main__':
     train_normal = True
     train_superposition = True
 
-    if train_normal:
-        from superposition_cifar100 import make_disjoint_datasets
-        disjoint_sets = make_disjoint_datasets()
-        num_of_tasks = len(disjoint_sets)
+    from superposition_cifar100 import make_disjoint_datasets
+    disjoint_sets = make_disjoint_datasets()
+    num_of_tasks = len(disjoint_sets)
 
+    if train_normal:
         model = simple_model(input_size, num_of_classes)
 
         acc_normal = normal_training(model, disjoint_sets, num_of_epochs, num_of_tasks, input_size, batch_size=batch_size)
@@ -365,10 +365,6 @@ if __name__ == '__main__':
 
     if train_superposition:
         lr_over_time = []  # re-initiate learning rate
-
-        from superposition_cifar100 import make_disjoint_datasets
-        disjoint_sets = make_disjoint_datasets()
-        num_of_tasks = len(disjoint_sets)
 
         model = simple_model(input_size, num_of_classes)
 
