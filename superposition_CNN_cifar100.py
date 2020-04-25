@@ -300,7 +300,7 @@ def superposition_training(model, datasets, num_of_epochs, num_of_units, num_of_
     :param num_of_tasks: number of different tasks
     :param input_size: image input size in pixels
     :param batch_size: batch size - number of samples per gradient update (default = 32)
-    :return: list of test accuracies for 10 epochs for each task (or validation accuracies for original task)
+    :return: list of test accuracies for 10 epochs for each task
     """
     from superposition_cifar100 import prepare_data
     original_accuracies = []

@@ -1,4 +1,6 @@
 import numpy as np
+import json
+import os
 
 
 def shift_matrix_columns(matrix, num_of_columns):
@@ -55,5 +57,25 @@ def zero_out_vector(vec, proportion_0):
     abs_threshold = vec_sorted[round(len(vec) * proportion_0)]
     mask = (np.absolute(vec) > abs_threshold).astype(float)
     return mask * vec
+
+
+def get_current_saved_results(filename):
+    """
+    Load dictionary with results from JSON file and create new keys if necessary.
+
+    :param filename: name of the file this function is called from (without .py extension)
+    :return: dictionary with current data, two keys for normal and superposition accuracies values
+    """
+    with open('saved_data/multiple_results.json', 'r') as fp:
+        data = json.load(fp)
+
+    curr_filename_normal = filename + '_acc_normal'
+    curr_filename_superposition = filename + '_acc_superposition'
+    if curr_filename_normal not in data:
+        data[curr_filename_normal] = []
+    if curr_filename_superposition not in data:
+        data[curr_filename_superposition] = []
+
+    return data, curr_filename_normal, curr_filename_superposition
 
 

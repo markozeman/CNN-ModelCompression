@@ -385,7 +385,7 @@ def superposition_training(model, datasets, num_of_epochs, num_of_units, num_of_
     :param num_of_classes: number of different classes/output labels
     :param num_of_tasks: number of different tasks
     :param batch_size: batch size - number of samples per gradient update (default = 32)
-    :return: list of test accuracies for 10 epochs for each task (or validation accuracies for original task)
+    :return: list of test accuracies for 10 epochs for each task
     """
     original_accuracies = []
     context_matrices = get_context_matrices(num_of_units, num_of_classes, num_of_tasks)

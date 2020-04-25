@@ -296,7 +296,7 @@ def superposition_training(model, datasets, num_of_epochs, num_of_units, num_of_
     :param batch_size: batch size - number of samples per gradient update
     :param active_neurons_at_start: number of active neurons in both hidden layers at the first task
     :param neurons_added_each_task: number of newly activated neurons in both hidden layers for each new task
-    :return: list of test accuracies for 10 epochs for each task (or validation accuracies for original task)
+    :return: list of test accuracies for 10 epochs for each task
     """
     original_accuracies = []
     context_matrices = get_context_matrices(num_of_units, num_of_classes, num_of_tasks)

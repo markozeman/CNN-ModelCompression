@@ -2,6 +2,8 @@
 Based on article 'Superposition of many models into one':
 https://arxiv.org/pdf/1902.05522.pdf
 """
+import os
+import json
 from datasets import *
 from keras.models import Sequential
 from keras.layers import Dense, Flatten
@@ -390,7 +392,7 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
     :param num_of_classes: number of different classes/output labels
     :param num_of_tasks: number of different tasks (permutations of original images)
     :param batch_size: batch size - number of samples per gradient update (default = 32)
-    :return: list of test accuracies for 10 epochs for each task (or validation accuracies for original task)
+    :return: list of test accuracies for 10 epochs for each task
     """
     original_accuracies = []
     context_matrices = get_context_matrices(num_of_units, num_of_classes, num_of_tasks)
@@ -426,39 +428,50 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
 
 if __name__ == '__main__':
     input_size = (28, 28)
-    num_of_units = 1000     # todo - change to 1024
+    num_of_units = 1000
     num_of_classes = 10
 
-    num_of_tasks = 50       # todo - change to 50
+    num_of_tasks = 5       # todo - change to 50
     num_of_epochs = 10
     batch_size = 600
 
     train_normal = True
     train_superposition = True
 
-    if train_normal:
-        X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
+    data, curr_filename_normal, curr_filename_superposition = get_current_saved_results(os.path.basename(__file__)[:-3])
 
-        model = simple_model(input_size, num_of_units, num_of_classes)
+    num_of_runs = 5
+    for i in range(num_of_runs):
+        print('\n\n------\nRun #%d\n------\n\n' % (i + 1))
 
-        acc_normal = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, batch_size)
+        if train_normal:
+            lr_over_time = []  # re-initiate learning rate
+            X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
 
-        if not train_superposition:
-            plot_lr(lr_over_time)
-            plot_accuracies_over_time(acc_normal, np.zeros(len(acc_normal)))
+            model = simple_model(input_size, num_of_units, num_of_classes)
 
-    if train_superposition:
-        lr_over_time = []  # re-initiate learning rate
-        X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
+            acc_normal = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, batch_size)
+            data[curr_filename_normal].append(acc_normal)
 
-        model = simple_model(input_size, num_of_units, num_of_classes)
+            # if not train_superposition:
+            #     plot_lr(lr_over_time)
+            #     plot_accuracies_over_time(acc_normal, np.zeros(len(acc_normal)))
 
-        acc_superposition = superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units,
-                                                   num_of_classes, num_of_tasks, batch_size)
+        if train_superposition:
+            lr_over_time = []  # re-initiate learning rate
+            X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
 
-        if not train_normal:
-            plot_lr(lr_over_time)
-            plot_accuracies_over_time(np.zeros(len(acc_superposition)), acc_superposition)
-        else:
-            plot_accuracies_over_time(acc_normal, acc_superposition)
+            model = simple_model(input_size, num_of_units, num_of_classes)
 
+            acc_superposition = superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units,
+                                                       num_of_classes, num_of_tasks, batch_size)
+            data[curr_filename_superposition].append(acc_superposition)
+
+            # if not train_normal:
+            #     plot_lr(lr_over_time)
+            #     plot_accuracies_over_time(np.zeros(len(acc_superposition)), acc_superposition)
+            # else:
+            #     plot_accuracies_over_time(acc_normal, acc_superposition)
+
+        with open('saved_data/multiple_results.json', 'w') as fp:
+            json.dump(data, fp, sort_keys=True, indent=4)
