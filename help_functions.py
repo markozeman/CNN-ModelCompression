@@ -59,18 +59,19 @@ def zero_out_vector(vec, proportion_0):
     return mask * vec
 
 
-def get_current_saved_results(filename):
+def get_current_saved_results(filename, additional_label=''):
     """
     Load dictionary with results from JSON file and create new keys if necessary.
 
     :param filename: name of the file this function is called from (without .py extension)
+    :param additional_label: optional string providing extra information
     :return: dictionary with current data, two keys for normal and superposition accuracies values
     """
     with open('saved_data/multiple_results.json', 'r') as fp:
         data = json.load(fp)
 
-    curr_filename_normal = filename + '_acc_normal'
-    curr_filename_superposition = filename + '_acc_superposition'
+    curr_filename_normal = filename + additional_label + '_acc_normal'
+    curr_filename_superposition = filename + additional_label + '_acc_superposition'
     if curr_filename_normal not in data:
         data[curr_filename_normal] = []
     if curr_filename_superposition not in data:

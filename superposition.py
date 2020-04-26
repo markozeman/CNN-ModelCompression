@@ -431,7 +431,7 @@ if __name__ == '__main__':
     num_of_units = 1000
     num_of_classes = 10
 
-    num_of_tasks = 5       # todo - change to 50
+    num_of_tasks = 8       # todo - change to 50
     num_of_epochs = 10
     batch_size = 600
 
@@ -439,6 +439,9 @@ if __name__ == '__main__':
     train_superposition = True
 
     data, curr_filename_normal, curr_filename_superposition = get_current_saved_results(os.path.basename(__file__)[:-3])
+
+    plot_multiple_results([curr_filename_superposition, curr_filename_normal], ['Superposition model', 'Baseline model'],
+                          ['tab:blue', 'tab:orange'], 'Epoch', 'Accuracy (%)', [10], 0, 100, text_strings=None)
 
     num_of_runs = 5
     for i in range(num_of_runs):

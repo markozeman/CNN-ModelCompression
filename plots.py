@@ -1,3 +1,4 @@
+import json
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
@@ -95,6 +96,57 @@ def plot_general(line_1, line_2, legend_lst, title, x_label, y_label, vertical_l
     if text_strings is not None:
         for i in range(len(text_strings)):
             plt.text(vertical_lines_x[i] + 0.25, vl_min, text_strings[i], color='r')
+    plt.show()
+
+
+def plot_multiple_results(dict_keys, legend_lst, colors, x_label, y_label, vertical_lines_x, vl_min, vl_max, text_strings=None):
+    """
+    Plot more lines from the saved results on the same plot with additional information.
+
+    :param dict_keys: list of strings that represent keys in saved JSON file
+    :param legend_lst: list of label values (length of dict_keys)
+    :param colors: list of colors used for lines (length of dict_keys)
+    :param x_label: label of axis x (string)
+    :param y_label: label of axis y (string)
+    :param vertical_lines_x: x values of where to draw vertical lines
+    :param vl_min: vertical lines minimum y value
+    :param vl_max: vertical lines maximum y value
+    :param text_strings: optional list of text strings to add to the bottom of vertical lines
+    :return: None
+    """
+    with open('saved_data/multiple_results.json', 'r') as fp:
+        data = json.load(fp)
+
+    font = {'family': 'normal', 'size': 20}
+    plt.rc('font', **font)
+
+    # plot lines with confidence intervals
+    for i, dict_key in enumerate(dict_keys):
+        matrix = np.array(data[dict_key])
+        mean = np.mean(matrix, axis=0)
+        std = np.std(matrix, axis=0)
+
+        # take only every n-th element of the array
+        n = 5
+        mean = mean[0::n]
+        std = std[0::n]
+
+        # plot the shaded range of the confidence intervals (mean +/- 2*std)
+        plt.fill_between(range(0, mean.shape[0] * n, n), mean + (2 * std), mean - (2 * std), color=colors[i], alpha=0.25)
+
+        # plot the mean on top (every other line is dashed)
+        if i % 2 == 0:
+            plt.plot(range(0, mean.shape[0] * n, n), mean, colors[i], linewidth=3)
+        else:
+            plt.plot(range(0, mean.shape[0] * n, n), mean, colors[i], linewidth=3, linestyle='--')
+
+    plt.legend(legend_lst)
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    plt.vlines(vertical_lines_x, vl_min, vl_max, colors='k', linestyles='dashed', linewidth=2, alpha=0.5)
+    if text_strings is not None:
+        for i in range(len(text_strings)):
+            plt.text(vertical_lines_x[i] + 0.25, vl_min, text_strings[i], color='k', alpha=0.5)
     plt.show()
 
 
