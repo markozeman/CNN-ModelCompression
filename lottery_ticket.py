@@ -2,6 +2,8 @@
 Based on article 'THE LOTTERY TICKET HYPOTHESIS: FINDING SPARSE, TRAINABLE NEURAL NETWORKS':
 https://arxiv.org/pdf/1803.03635.pdf
 """
+import os
+
 from datasets import *
 from keras.models import Sequential
 from keras.layers import Dense, Flatten
@@ -9,6 +11,8 @@ from keras.engine.saving import load_model
 from keras.utils.np_utils import to_categorical
 from keras.optimizers import Adam
 from keras.callbacks import Callback, LearningRateScheduler
+
+from help_functions import get_current_saved_results
 from plots import *
 from math import exp
 import numpy as np
@@ -259,7 +263,7 @@ def iterative_pruning(model, init_weights, mask, n, prune_each_step, X_train, y_
 
 if __name__ == '__main__':
     input_size = (28, 28)
-    num_of_units = 1000
+    num_of_units = 150
     num_of_classes = 10
 
     num_of_epochs = 10
@@ -268,17 +272,33 @@ if __name__ == '__main__':
     X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
 
     prune_share = 0.99   # share of weights we want to prune in each layer
-    n = 5   # number of steps to get to the sparsity wanted
+    n = 9   # number of steps to get to the sparsity wanted
     prune_each_step = prune_share_for_each_step(prune_share, n)
 
-    # iterative pruning without changing weights with initial ones
-    model = simple_model(input_size, num_of_units, num_of_classes)
-    _, mask = get_model_weights(model)
-    acc_train_no_init = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, mask)
-    acc_pruning_no_init, _ = iterative_pruning(model, None, mask, n, prune_each_step, X_train, y_train, X_test,
-                                               y_test, num_of_epochs, batch_size, use_init_weights=False)
-    all_accuracies_no_init = acc_train_no_init + acc_pruning_no_init
+    data, dict_keys = get_current_saved_results(os.path.basename(__file__)[:-3], ['iterative_pruning'])
 
+    # plot_multiple_results(dict_keys, [], ['tab:orange'], 'Epoch', 'Accuracy (%)',
+    #                       [i * num_of_epochs for i in range(n + 1)], 5, 100, show_CI=False, text_strings=['100.0 %',
+    #                       '59.9 %', '35.9 %', '21.5 %', '12.9 %', '7.7 %', '4.6 %', '2.8 %', '1.7 %', '1.0 %'])
+
+    num_of_runs = 5
+    for i in range(num_of_runs):
+        print('\n\n------\nRun #%d\n------\n\n' % (i + 1))
+
+        # iterative pruning without changing weights with initial ones
+        model = simple_model(input_size, num_of_units, num_of_classes)
+        _, mask = get_model_weights(model)
+        acc_train_no_init = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, mask)
+        acc_pruning_no_init, remained_weights = iterative_pruning(model, None, mask, n, prune_each_step, X_train, y_train, X_test,
+                                                   y_test, num_of_epochs, batch_size, use_init_weights=False)
+        all_accuracies_no_init = acc_train_no_init + acc_pruning_no_init
+
+        data[dict_keys[0]].append(all_accuracies_no_init)
+
+        with open('saved_data/multiple_results.json', 'w') as fp:
+            json.dump(data, fp, sort_keys=True, indent=4)
+
+    '''
     # iterative pruning with lottery ticket hypothesis
     model = simple_model(input_size, num_of_units, num_of_classes)
     init_weights, mask = get_model_weights(model)
@@ -291,6 +311,6 @@ if __name__ == '__main__':
                  'Lottery ticket iterative pruning with %s weights' % f'{model.count_params():,}', 'epoch', 'accuracy (%)',
                  [i * num_of_epochs for i in range(n + 1)], min(all_accuracies + all_accuracies_no_init) - 2,
                  max(all_accuracies + all_accuracies_no_init) + 2, text_strings=remained_weights)
-
+    '''
 
 

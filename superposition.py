@@ -438,10 +438,10 @@ if __name__ == '__main__':
     train_normal = True
     train_superposition = True
 
-    data, curr_filename_normal, curr_filename_superposition = get_current_saved_results(os.path.basename(__file__)[:-3])
+    data, dict_keys = get_current_saved_results(os.path.basename(__file__)[:-3], ['acc_superposition', 'acc_normal'])
 
-    plot_multiple_results([curr_filename_superposition, curr_filename_normal], ['Superposition model', 'Baseline model'],
-                          ['tab:blue', 'tab:orange'], 'Epoch', 'Accuracy (%)', [10], 0, 100, text_strings=None)
+    plot_multiple_results(dict_keys, ['Superposition model', 'Baseline model'], ['tab:blue', 'tab:orange'],
+                          'Epoch', 'Accuracy (%)', [10], 0, 100)
 
     num_of_runs = 5
     for i in range(num_of_runs):
@@ -454,7 +454,7 @@ if __name__ == '__main__':
             model = simple_model(input_size, num_of_units, num_of_classes)
 
             acc_normal = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, batch_size)
-            data[curr_filename_normal].append(acc_normal)
+            data[dict_keys[1]].append(acc_normal)
 
             # if not train_superposition:
             #     plot_lr(lr_over_time)
@@ -468,7 +468,7 @@ if __name__ == '__main__':
 
             acc_superposition = superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units,
                                                        num_of_classes, num_of_tasks, batch_size)
-            data[curr_filename_superposition].append(acc_superposition)
+            data[dict_keys[0]].append(acc_superposition)
 
             # if not train_normal:
             #     plot_lr(lr_over_time)
