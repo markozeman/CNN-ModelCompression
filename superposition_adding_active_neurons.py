@@ -418,17 +418,19 @@ if __name__ == '__main__':
     batch_size = 600
 
     active_neurons_at_start = 150
-    neurons_added_each_task = 0
+    neurons_added_each_task = 17
     assert active_neurons_at_start + ((num_of_tasks - 1) * neurons_added_each_task) <= num_of_units
 
     train_normal = True
     train_superposition = True
 
-    data, dict_keys = get_current_saved_results(os.path.basename(__file__)[:-3], ['acc_superposition_start150_increase17', 'acc_normal_start150_increase17'])
+    data, dict_keys = get_current_saved_results(os.path.basename(__file__)[:-3], ['acc_superposition_start150_increase17', 'acc_superposition_start150_increase0',
+                                                                                  'acc_normal_start150_increase17', 'acc_normal_start150_increase0'])
 
-    plot_multiple_results(dict_keys, ['Superposition model', 'Baseline model'], ['tab:blue', 'tab:orange'],
-                          'Epoch', 'Accuracy (%)', [i * num_of_epochs for i in range(num_of_tasks)], 0, 100,
-                          text_strings=[str(active_neurons_at_start + (i * neurons_added_each_task)) for i in range(num_of_tasks)])
+    plot_multiple_results(dict_keys, ['Superposition model increasing', 'Superposition model fixed', 'Baseline model increasing', 'Baseline model fixed'],
+                          ['blue', 'tab:blue', 'tab:orange', 'orange'], 'Epoch', 'Accuracy (%)',
+                          [i * num_of_epochs for i in range(num_of_tasks + 1)][0::10], 0, 100, show_CI=False,
+                          text_strings=[str(active_neurons_at_start + (i * neurons_added_each_task)) for i in range(num_of_tasks + 1)][0::10])
 
     num_of_runs = 1
     for i in range(num_of_runs):

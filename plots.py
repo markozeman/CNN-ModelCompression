@@ -137,7 +137,8 @@ def plot_multiple_results(dict_keys, legend_lst, colors, x_label, y_label, verti
             plt.fill_between(range(0, mean.shape[0] * n, n), mean + (2 * std), mean - (2 * std), color=colors[i], alpha=0.25)
 
         # plot the mean on top (every other line is dashed)
-        if i % 2 == 0:
+        # if i < 2:   # for comparing 4 lines
+        if i % 2 == 0:    # for comparing 2 lines
             plt.plot(range(0, mean.shape[0] * n, n), mean, colors[i], linewidth=3)
         else:
             plt.plot(range(0, mean.shape[0] * n, n), mean, colors[i], linewidth=3, linestyle='--')

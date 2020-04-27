@@ -2,6 +2,8 @@
 Based on article 'Superposition of many models into one':
 https://arxiv.org/pdf/1902.05522.pdf
 """
+import os
+
 from datasets import *
 from keras.models import Sequential
 from keras.layers import Dense, Flatten, Conv2D, MaxPooling2D, AveragePooling2D
@@ -11,7 +13,7 @@ from keras.callbacks import Callback, LearningRateScheduler
 from plots import *
 from functools import reduce
 from math import exp
-from help_functions import multiply_kernels_with_context
+from help_functions import multiply_kernels_with_context, get_current_saved_results
 import numpy as np
 import tensorflow as tf
 
@@ -147,7 +149,6 @@ class TestRealSuperpositionPerformanceCallback(Callback):
             layer.set_weights(curr_weights[index])
 
 
-
 lr_over_time = []   # global variable to store changing learning rates
 
 
@@ -167,7 +168,7 @@ def lr_scheduler(epoch, lr):
     elif decay_type == 'exponential':
         initial_lr = 0.0001
         k = 0.07
-        t = len(lr_over_time) % 10      # to start each new task with the same learning rate as the first one
+        t = len(lr_over_time) % num_of_epochs      # to start each new task with the same learning rate as the first one
         lr = initial_lr * exp(-k * t)
     return max(lr, 0.000001)    # don't let learning rate go to 0
 
@@ -199,7 +200,7 @@ def simple_model(input_size, num_of_classes):
     model.add(Conv2D(64, kernel_size=(3, 3), activation='relu'))
     model.add(MaxPooling2D(pool_size=(2, 2)))
     model.add(Flatten())
-    model.add(Dense(128, activation='relu'))
+    model.add(Dense(1000, activation='relu'))
     model.add(Dense(num_of_classes, activation='softmax'))
     model.compile(optimizer=Adam(learning_rate=0.0001), loss='categorical_crossentropy', metrics=['accuracy'])
     model.summary()
@@ -508,41 +509,56 @@ if __name__ == '__main__':
     sess = tf.Session(config=config)
 
     input_size = (28, 28)
-    num_of_units = 1024
+    num_of_units = 1024     # not used
     num_of_classes = 10
 
-    num_of_tasks = 25       # todo - change to 50
+    num_of_tasks = 50       # todo - change to 50
     num_of_epochs = 10
     batch_size = 600
 
     train_normal = True
     train_superposition = True
 
-    if train_normal:
-        X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
+    data, dict_keys = get_current_saved_results(os.path.basename(__file__)[:-3], ['acc_superposition', 'acc_normal'])
 
-        model = simple_model(input_size, num_of_classes)
+    plot_multiple_results(dict_keys, ['Superposition model', 'Baseline model'], ['tab:blue', 'tab:orange'],
+                          'Epoch', 'Accuracy (%)', [10], 0, 100)
 
-        acc_normal = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, batch_size)
+    num_of_runs = 1
+    for i in range(num_of_runs):
+        print('\n\n------\nRun #%d\n------\n\n' % (i + 1))
 
-        if not train_superposition:
-            plot_lr(lr_over_time)
-            plot_accuracies_over_time(acc_normal, np.zeros(len(acc_normal)))
+        if train_normal:
+            lr_over_time = []  # re-initiate learning rate
+            X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
 
-    if train_superposition:
-        lr_over_time = []  # re-initiate learning rate
-        X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
+            model = simple_model(input_size, num_of_classes)
 
-        model = simple_model(input_size, num_of_classes)
+            acc_normal = normal_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_tasks, batch_size)
+            data[dict_keys[1]].append(acc_normal)
 
-        acc_superposition = superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units,
-                                                   num_of_classes, num_of_tasks, batch_size)
+            # if not train_superposition:
+            #     plot_lr(lr_over_time)
+            #     plot_accuracies_over_time(acc_normal, np.zeros(len(acc_normal)))
 
-        if not train_normal:
-            plot_lr(lr_over_time)
-            plot_accuracies_over_time(np.zeros(len(acc_superposition)), acc_superposition)
-        else:
-            plot_accuracies_over_time(acc_normal, acc_superposition)
+        if train_superposition:
+            lr_over_time = []  # re-initiate learning rate
+            X_train, y_train, X_test, y_test = prepare_data(num_of_classes)
+
+            model = simple_model(input_size, num_of_classes)
+
+            acc_superposition = superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units,
+                                                       num_of_classes, num_of_tasks, batch_size)
+            data[dict_keys[0]].append(acc_superposition)
+
+            # if not train_normal:
+            #     plot_lr(lr_over_time)
+            #     plot_accuracies_over_time(np.zeros(len(acc_superposition)), acc_superposition)
+            # else:
+            #     plot_accuracies_over_time(acc_normal, acc_superposition)
+
+        with open('saved_data/multiple_results.json', 'w') as fp:
+            json.dump(data, fp, sort_keys=True, indent=4)
 
 
 
