@@ -2,6 +2,8 @@
 Based on article 'Superposition of many models into one':
 https://arxiv.org/pdf/1902.05522.pdf
 """
+import os
+
 from datasets import *
 from keras.models import Sequential
 from keras.layers import Dense, Flatten, Conv2D, MaxPooling2D, AveragePooling2D
@@ -11,7 +13,7 @@ from keras.callbacks import Callback, LearningRateScheduler
 from plots import *
 from functools import reduce
 from math import exp
-from help_functions import multiply_kernels_with_context
+from help_functions import multiply_kernels_with_context, get_current_saved_results
 import numpy as np
 import tensorflow as tf
 
@@ -129,7 +131,7 @@ def lr_scheduler(epoch, lr):
     elif decay_type == 'exponential':
         initial_lr = 0.0001
         k = 0.07
-        t = len(lr_over_time) % 10      # to start each new task with the same learning rate as the first one
+        t = len(lr_over_time) % num_of_epochs      # to start each new task with the same learning rate as the first one
         lr = initial_lr * exp(-k * t)
     return max(lr, 0.000001)    # don't let learning rate go to 0
 
@@ -147,7 +149,7 @@ def simple_model(input_size, num_of_classes):
     model.add(Conv2D(64, kernel_size=(3, 3), activation='relu'))
     model.add(MaxPooling2D(pool_size=(2, 2)))
     model.add(Flatten())
-    model.add(Dense(128, activation='relu'))   # todo: try bigger number of units
+    model.add(Dense(1000, activation='relu'))
     model.add(Dense(num_of_classes, activation='softmax'))
     model.compile(optimizer=Adam(learning_rate=0.0001), loss='categorical_crossentropy', metrics=['accuracy'])
     model.summary()
@@ -354,24 +356,41 @@ if __name__ == '__main__':
     disjoint_sets = make_disjoint_datasets()
     num_of_tasks = len(disjoint_sets)
 
-    if train_normal:
-        model = simple_model(input_size, num_of_classes)
+    data, dict_keys = get_current_saved_results(os.path.basename(__file__)[:-3], ['acc_superposition', 'acc_normal'])
 
-        acc_normal = normal_training(model, disjoint_sets, num_of_epochs, num_of_tasks, input_size, batch_size=batch_size)
+    # plot_multiple_results(dict_keys, ['Superposition model', 'Baseline model'], ['tab:blue', 'tab:orange'],
+    #                       'Epoch', 'Accuracy (%)', [i * num_of_epochs for i in range(1, num_of_tasks)], 0, 70)
 
-        if not train_superposition:
-            plot_lr(lr_over_time)
-            plot_accuracies_over_time(acc_normal, np.zeros(len(acc_normal)))
+    num_of_runs = 2
+    for i in range(num_of_runs):
+        print('\n\n------\nRun #%d\n------\n\n' % (i + 1))
 
-    if train_superposition:
-        lr_over_time = []  # re-initiate learning rate
+        if train_normal:
+            lr_over_time = []  # re-initiate learning rate
 
-        model = simple_model(input_size, num_of_classes)
+            model = simple_model(input_size, num_of_classes)
 
-        acc_superposition = superposition_training(model, disjoint_sets, num_of_epochs, None, num_of_classes, num_of_tasks, input_size, batch_size=batch_size)
+            acc_normal = normal_training(model, disjoint_sets, num_of_epochs, num_of_tasks, input_size, batch_size=batch_size)
+            data[dict_keys[1]].append(acc_normal)
 
-        if not train_normal:
-            plot_lr(lr_over_time)
-            plot_accuracies_over_time(np.zeros(len(acc_superposition)), acc_superposition)
-        else:
-            plot_accuracies_over_time(acc_normal, acc_superposition)
+            # if not train_superposition:
+            #     plot_lr(lr_over_time)
+            #     plot_accuracies_over_time(acc_normal, np.zeros(len(acc_normal)))
+
+        if train_superposition:
+            lr_over_time = []  # re-initiate learning rate
+
+            model = simple_model(input_size, num_of_classes)
+
+            acc_superposition = superposition_training(model, disjoint_sets, num_of_epochs, None, num_of_classes, num_of_tasks, input_size, batch_size=batch_size)
+            data[dict_keys[0]].append(acc_superposition)
+
+            # if not train_normal:
+            #     plot_lr(lr_over_time)
+            #     plot_accuracies_over_time(np.zeros(len(acc_superposition)), acc_superposition)
+            # else:
+            #     plot_accuracies_over_time(acc_normal, acc_superposition)
+
+        with open('saved_data/multiple_results.json', 'w') as fp:
+            json.dump(data, fp, sort_keys=True, indent=4)
+
