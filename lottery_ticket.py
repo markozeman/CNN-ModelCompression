@@ -277,11 +277,11 @@ if __name__ == '__main__':
 
     data, dict_keys = get_current_saved_results(os.path.basename(__file__)[:-3], ['iterative_pruning'])
 
-    # plot_multiple_results(dict_keys, [], ['tab:orange'], 'Epoch', 'Accuracy (%)',
-    #                       [i * num_of_epochs for i in range(n + 1)], 5, 100, show_CI=False, text_strings=['100.0 %',
-    #                       '59.9 %', '35.9 %', '21.5 %', '12.9 %', '7.7 %', '4.6 %', '2.8 %', '1.7 %', '1.0 %'])
+    plot_multiple_results(dict_keys, [], ['tab:orange'], 'Epoch', 'Accuracy (%)',
+                          [i * num_of_epochs for i in range(n + 1)], 5, 100, show_CI=False, text_strings=['100.0 %',
+                          '59.9 %', '35.9 %', '21.5 %', '12.9 %', '7.7 %', '4.6 %', '2.8 %', '1.7 %', '1.0 %'])
 
-    num_of_runs = 5
+    num_of_runs = 0
     for i in range(num_of_runs):
         print('\n\n------\nRun #%d\n------\n\n' % (i + 1))
 

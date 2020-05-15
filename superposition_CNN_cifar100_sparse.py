@@ -3,7 +3,10 @@ Based on article 'Superposition of many models into one':
 https://arxiv.org/pdf/1902.05522.pdf
 """
 import os
-
+import pickle
+from keras import Model
+from keras.engine.saving import load_model
+from sklearn.decomposition import PCA
 from datasets import *
 from keras.models import Sequential
 from keras.layers import Dense, Flatten, Conv2D, MaxPooling2D, AveragePooling2D
@@ -13,7 +16,7 @@ from keras.callbacks import Callback, LearningRateScheduler
 from plots import *
 from functools import reduce
 from math import exp
-from help_functions import multiply_kernels_with_context, get_current_saved_results
+from help_functions import multiply_kernels_with_context, get_current_saved_results, zero_out_vector
 import numpy as np
 import tensorflow as tf
 
@@ -64,40 +67,12 @@ class TestSuperpositionPerformanceCallback(Callback):
 
         # temporarily change model weights to be suitable for first task (original MNIST images), (without bias node)
         for i, layer in enumerate(self.model.layers):
-            if i < 2 or i > 3:  # conv or dense layer
-                # not multiplying with inverse because inverse is the same in binary superposition with {-1, 1} on the diagonal
-                # using only element-wise multiplication on diagonal vectors for speed-up
+            context_inverse_multiplied = np.diagonal(self.context_matrices[self.task_index][i])
+            for task_i in range(self.task_index - 1, 0, -1):
+                context_inverse_multiplied = np.multiply(context_inverse_multiplied, np.diagonal(self.context_matrices[task_i][i]))
+            context_inverse_multiplied = np.diag(context_inverse_multiplied)
 
-                if i < 2:  # conv layer
-                    # flatten
-                    context_vector = self.context_matrices[self.task_index][i]
-                    for task_i in range(self.task_index - 1, 0, -1):
-                        context_vector = np.multiply(context_vector, self.context_matrices[task_i][i])
-
-                    new_w = np.reshape(np.multiply(curr_w_matrices[i].flatten(), context_vector), curr_w_matrices[i].shape)
-                    layer.set_weights([new_w, curr_bias_vectors[i]])
-
-                    # context_vector = self.context_matrices[self.task_index][i]
-                    # context_inverse_multiplied = multiply_kernels_with_context(curr_w_matrices[i], context_vector)
-                    # for task_i in range(self.task_index - 1, 0, -1):
-                    #     context_inverse_multiplied = multiply_kernels_with_context(context_inverse_multiplied, self.context_matrices[task_i][i])
-                    #
-                    # layer.set_weights([context_inverse_multiplied, curr_bias_vectors[i]])
-
-                    # # unfold with multiplication of context! matrices
-                    # context_vector = self.context_matrices[self.task_index][i]
-                    # for task_i in range(self.task_index - 1, 0, -1):
-                    #     context_vector = np.multiply(context_vector, self.context_matrices[task_i][i])
-                    #
-                    # layer.set_weights([multiply_kernels_with_context(curr_w_matrices[i], context_vector), curr_bias_vectors[i]])
-
-                else:  # dense layer
-                    context_inverse_multiplied = np.diagonal(self.context_matrices[self.task_index][i - 2])
-                    for task_i in range(self.task_index - 1, 0, -1):
-                        context_inverse_multiplied = np.multiply(context_inverse_multiplied, np.diagonal(self.context_matrices[task_i][i - 2]))
-                    context_inverse_multiplied = np.diag(context_inverse_multiplied)
-
-                    layer.set_weights([context_inverse_multiplied @ curr_w_matrices[i - 2], curr_bias_vectors[i - 2]])  # todo: changed here
+            layer.set_weights([context_inverse_multiplied @ curr_w_matrices[i], curr_bias_vectors[i]])  # todo: changed here
 
         # evaluate only on 1.000 images (10% of all test images) to speed-up
         loss, accuracy = self.model.evaluate(self.X_test[:1000], self.y_test[:1000], verbose=2)
@@ -203,27 +178,18 @@ def random_binary_array(size):
     return vec
 
 
-def get_context_matrices(model):
+def get_context_matrices(num_of_tasks):
     """
-    Get random context matrices for simple convolutional neural network that uses binary superposition as a context.
+    Get random context matrices for neural network that uses binary superposition as a context.
 
-    :param model: Keras model instance
+    :param num_of_tasks: number of different tasks
     :return: multidimensional numpy array with random context (binary superposition)
     """
-    context_shapes = []
-    for i, layer in enumerate(model.layers):
-        if i < 2 or i > 3:   # conv layer or dense layer
-            context_shapes.append(layer.get_weights()[0].shape)
-
     context_matrices = []
     for i in range(num_of_tasks):
-        _, kernel_size, tensor_width, num_of_conv_layers = context_shapes[0]
-        C1 = random_binary_array(kernel_size * kernel_size * tensor_width * num_of_conv_layers)     # conv layer
-        _, kernel_size, tensor_width, num_of_conv_layers = context_shapes[1]
-        C2 = random_binary_array(kernel_size * kernel_size * tensor_width * num_of_conv_layers)     # conv layer
-        C3 = np.diag(random_binary_array(context_shapes[2][0]))  # dense layer  # todo: changed here
-        C4 = np.diag(random_binary_array(context_shapes[3][0]))  # dense layer  # todo: changed here
-        context_matrices.append([C1, C2, C3, C4])
+        C1 = np.diag(random_binary_array(1000))     # todo: changed here
+        C2 = np.diag(random_binary_array(1000))    # todo: changed here
+        context_matrices.append([C1, C2])
     return context_matrices
 
 
@@ -237,16 +203,11 @@ def context_multiplication(model, context_matrices, task_index):
     :return: None (but model weights are changed)
     """
     for i, layer in enumerate(model.layers):
-        if i < 2 or i > 3:  # conv or dense layer
-            curr_w = layer.get_weights()[0]
-            curr_w_bias = layer.get_weights()[1]
+        curr_w = layer.get_weights()[0]
+        curr_w_bias = layer.get_weights()[1]
 
-            if i < 2:   # conv layer
-                new_w = np.reshape(np.multiply(curr_w.flatten(), context_matrices[task_index][i]), curr_w.shape)
-            else:    # dense layer
-                new_w = context_matrices[task_index][i - 2] @ curr_w  # -2 because of Flatten and MaxPooling layers    # todo: changed here
-
-            layer.set_weights([new_w, curr_w_bias])
+        new_w = context_matrices[task_index][i] @ curr_w    # todo: changed here
+        layer.set_weights([new_w, curr_w_bias])
 
 
 def normal_training(model, datasets, num_of_epochs, num_of_tasks, input_size, batch_size=32):
@@ -262,12 +223,11 @@ def normal_training(model, datasets, num_of_epochs, num_of_tasks, input_size, ba
     :param batch_size: batch size - number of samples per gradient update (default = 32)
     :return: list of test accuracies for 10 epochs for each task
     """
-    from superposition_cifar100 import prepare_data
     original_accuracies = []
 
     # first training task - 10 classes of CIFAR-100 dataset
     X_train, y_train, X_test, y_test = datasets[0]     # these X_test and y_test are used for testing all tasks
-    X_train, y_train, X_test, y_test = prepare_data(X_train, y_train, X_test, y_test, input_size)
+    # X_train, y_train, X_test, y_test = prepare_data(X_train, y_train, X_test, y_test, input_size)
     history, accuracies, _ = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1)
     original_accuracies.extend(accuracies)
 
@@ -279,7 +239,7 @@ def normal_training(model, datasets, num_of_epochs, num_of_tasks, input_size, ba
         print("\n\n i: %d \n" % i)
 
         X_train, y_train, _, _ = datasets[i + 1]    # use X_test and y_test from the first task to get its accuracy
-        X_train, y_train, _, _ = prepare_data(X_train, y_train, X_test, y_test, input_size)
+        # X_train, y_train, _, _ = prepare_data(X_train, y_train, X_test, y_test, input_size)
         history, accuracies, _ = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1)
         original_accuracies.extend(accuracies)
 
@@ -304,13 +264,15 @@ def superposition_training(model, datasets, num_of_epochs, num_of_units, num_of_
     :param batch_size: batch size - number of samples per gradient update (default = 32)
     :return: list of test accuracies for 10 epochs for each task
     """
-    from superposition_cifar100 import prepare_data
     original_accuracies = []
-    context_matrices = get_context_matrices(model)
+    context_matrices = get_context_matrices(num_of_tasks)
+
+    # context_for_conv_layers = np.array(context_matrices)[:, :2]
+    # pickle.dump(context_for_conv_layers, open('cifar-100_1CNN_data/conv_layers_contexts.pickle', 'wb'))
 
     # first training task - 10 classes of CIFAR-100 dataset
     X_train, y_train, X_test, y_test = datasets[0]  # these X_test and y_test are used for testing all tasks
-    X_train, y_train, X_test, y_test = prepare_data(X_train, y_train, X_test, y_test, input_size)
+    # X_train, y_train, X_test, y_test = prepare_data(X_train, y_train, X_test, y_test, input_size)
     history, _, accuracies = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1,
                                 mode='superposition', context_matrices=context_matrices, task_index=0)
     original_accuracies.extend(accuracies)
@@ -326,7 +288,7 @@ def superposition_training(model, datasets, num_of_epochs, num_of_units, num_of_
         context_multiplication(model, context_matrices, i + 1)
 
         X_train, y_train, _, _ = datasets[i + 1]    # use X_test and y_test from the first task to get its accuracy
-        X_train, y_train, _, _ = prepare_data(X_train, y_train, X_test, y_test, input_size)
+        # X_train, y_train, _, _ = prepare_data(X_train, y_train, X_test, y_test, input_size)
         history, _, accuracies = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, batch_size, validation_share=0.1,
                                              mode='superposition', context_matrices=context_matrices, task_index=i + 1)
         original_accuracies.extend(accuracies)
@@ -335,6 +297,150 @@ def superposition_training(model, datasets, num_of_epochs, num_of_units, num_of_
         print('\nValidation accuracies: ', i, val_acc)
 
     return original_accuracies
+
+
+def prepare_data(X_train, y_train, X_test, y_test, input_size):
+    """
+    Normalize and prepare data to be ready for CNN input.
+
+    :param X_train: list of numpy arrays of train data
+    :param y_train: list of numpy arrays of train labels
+    :param X_test: list of numpy arrays of test data
+    :param y_test: list of numpy arrays of test labels
+    :param input_size: image input shape
+    :return: X_train, y_train, X_test, y_test - in the right form
+    """
+    # normalize input images to have values between 0 and 1
+    X_train = np.array(X_train).astype(dtype=np.float64)
+    X_test = np.array(X_test).astype(dtype=np.float64)
+    X_train /= 255
+    X_test /= 255
+
+    # reshape to the right dimensions for CNN
+    X_train = X_train.reshape(X_train.shape[0], *input_size)
+    X_test = X_test.reshape(X_test.shape[0], *input_size)
+
+    y_train = np.array(y_train)
+    y_test = np.array(y_test)
+
+    return X_train, y_train, X_test, y_test
+
+
+def get_feature_vector_representation(datasets, input_size, proportion_0=0.0):
+    """
+    Load trained CNN models for 'datasets' and get representation vectors for all images
+    after convolutional and pooling layers. Train and test labels do not change.
+
+    :param datasets: list of disjoint datasets with corresponding train and test set
+    :param input_size: image input shape
+    :param proportion_0: share of zeros we want in vector to make it more sparse, default=0 which does not change original vector
+    :return: 'datasets' images represented as feature vectors
+             [(X_train_vectors, y_train, X_test_vectors, y_test), (X_train_vectors, y_train, X_test_vectors, y_test), ...]
+    """
+    i = 0
+    vectors = []
+    rnd = np.random.RandomState(42)
+    for X_train, y_train, X_test, y_test in datasets:
+        X_train, y_train, X_test, y_test = prepare_data(X_train, y_train, X_test, y_test, input_size)
+
+        model = load_model('cifar-100_1CNN_data/CNN_model.h5')
+
+        conv_contexts = pickle.load(open('cifar-100_1CNN_data/conv_layers_contexts.pickle', 'rb'))
+
+        # unfold weights of 'model' with 'conv_contexts'
+        curr_w_matrices = []
+        curr_bias_vectors = []
+        for layer_index, layer in enumerate(model.layers):
+            if layer_index < 2:  # conv layer
+                curr_w_matrices.append(layer.get_weights()[0])
+                curr_bias_vectors.append(layer.get_weights()[1])
+
+        for layer_index, layer in enumerate(model.layers):
+            if layer_index < 2:   # conv layer
+                context_vector = conv_contexts[9][layer_index]
+                for task_i in range(9, i, -1):
+                    context_vector = np.multiply(context_vector, conv_contexts[task_i][layer_index])
+
+                new_w = np.reshape(np.multiply(curr_w_matrices[layer_index].flatten(), context_vector), curr_w_matrices[layer_index].shape)
+                layer.set_weights([new_w, curr_bias_vectors[layer_index]])
+
+        # 3 is the index of Flatten layer which outputs feature vector after convolution and pooling
+        intermediate_layer_model = Model(inputs=model.input, outputs=model.layers[3].output)
+
+        X_train_vectors = intermediate_layer_model.predict(X_train)
+        X_test_vectors = intermediate_layer_model.predict(X_test)
+
+        print(X_train_vectors.shape, X_test_vectors.shape)
+
+        # perform random projection on feature representations to reduce dimensionality
+        # from sklearn.random_projection import GaussianRandomProjection
+        # transformer = GaussianRandomProjection(n_components=1000, random_state=rnd)
+        # XX = np.vstack((X_train_vectors, X_test_vectors))
+        # XX = transformer.fit_transform(XX)
+        # X_train_vectors = XX[:5000, :]
+        # X_test_vectors = XX[5000:, :]
+
+
+        # perform PCA on feature representations to reduce dimensionality
+        # pca = PCA(n_components=10)
+        # XX = np.vstack((X_train_vectors, X_test_vectors))
+        # XX = pca.fit_transform(XX)
+        # X_train_vectors = XX[:5000, :]
+        # X_test_vectors = XX[5000:, :]
+
+
+        # make input even more sparse, with 'proportion_0' of zero values
+        # X_train_vectors_compressed = []
+        # X_test_vectors_compressed = []
+
+        for index in range(X_train_vectors.shape[0]):
+            X_train_vectors[index] = zero_out_vector(X_train_vectors[index], proportion_0)   # only zero out elements
+            # # actually delete the least significant elements
+            # X_train_vectors_compressed.append(np.array(sorted(np.absolute(X_train_vectors[index]))[-(round(X_train_vectors.shape[1] * (1 - proportion_0))):]))
+
+        for index in range(X_test_vectors.shape[0]):
+            X_test_vectors[index] = zero_out_vector(X_test_vectors[index], proportion_0)  # only zero out elements
+            # # actually delete the least significant elements
+            # X_test_vectors_compressed.append(np.array(sorted(np.absolute(X_test_vectors[index]))[-(round(X_test_vectors.shape[1] * (1 - proportion_0))):]))
+
+        # X_train_vectors_compressed = np.array(X_train_vectors_compressed)
+        # X_test_vectors_compressed = np.array(X_test_vectors_compressed)
+
+        # plot_weights_histogram(X_train_vectors[0], 30)  # to test new weights distribution
+
+        from sklearn.random_projection import GaussianRandomProjection
+        transformer = GaussianRandomProjection(n_components=1000, random_state=rnd)
+        XX = np.vstack((X_train_vectors, X_test_vectors))
+        XX = transformer.fit_transform(XX)
+        X_train_vectors = XX[:5000, :]
+        X_test_vectors = XX[5000:, :]
+
+        print(X_train_vectors.shape, X_test_vectors.shape)
+
+        vectors.append((X_train_vectors, y_train, X_test_vectors, y_test))
+        # vectors.append((X_train_vectors_compressed, y_train, X_test_vectors_compressed, y_test))
+
+        # print(X_train_vectors_compressed.shape, X_test_vectors_compressed.shape)
+        print('i:', i)
+        i += 1
+
+    return vectors
+
+
+def simple_nn(input_size, num_of_classes):
+    """
+    Create simple NN model with one hidden layer.
+
+    :param input_size: vector input size
+    :param num_of_classes: number of different classes/output labels
+    :return: Keras model instance
+    """
+    model = Sequential()
+    model.add(Dense(1000, activation='relu', input_shape=(input_size, )))
+    model.add(Dense(num_of_classes, activation='softmax'))
+    model.compile(optimizer=Adam(learning_rate=0.0001), loss='categorical_crossentropy', metrics=['accuracy'])
+    model.summary()
+    return model
 
 
 if __name__ == '__main__':
@@ -356,22 +462,79 @@ if __name__ == '__main__':
     disjoint_sets = make_disjoint_datasets()
     num_of_tasks = len(disjoint_sets)
 
-    data, dict_keys = get_current_saved_results(os.path.basename(__file__)[:-3], ['acc_superposition', 'acc_normal'])
+    '''
+    ### for horizontal line in Figure 3
+    X_train, y_train, X_test, y_test = disjoint_sets[0]
+    X_train, y_train, X_test, y_test = prepare_data(X_train, y_train, X_test, y_test, input_size)
+    print(y_test.shape)
 
-    # plot_multiple_results(dict_keys, ['Superposition model', 'Baseline model'], ['tab:blue', 'tab:orange'],
-    #                       'Epoch', 'Accuracy (%)', [i * num_of_epochs for i in range(1, num_of_tasks)], 0, 70)
+    model = simple_model(input_size, num_of_classes)
+    model.fit(X_train, y_train, epochs=num_of_epochs, batch_size=batch_size, verbose=2, validation_split=0.1)
+    loss, accuracy = model.evaluate(X_test, y_test, verbose=2)
+    print('acc: ', accuracy)
 
-    num_of_runs = 2
+    # 3 is the index of Flatten layer which outputs feature vector after convolution and pooling
+    intermediate_layer_model = Model(inputs=model.input, outputs=model.layers[3].output)
+
+    X_train_vectors = intermediate_layer_model.predict(X_train)
+    X_test_vectors = intermediate_layer_model.predict(X_test)
+
+    print(X_train_vectors.shape)
+    print(X_test_vectors.shape)
+
+    for index in range(X_train_vectors.shape[0]):
+        X_train_vectors[index] = zero_out_vector(X_train_vectors[index], 0.92028)  # only zero out elements
+
+    for index in range(X_test_vectors.shape[0]):
+        X_test_vectors[index] = zero_out_vector(X_test_vectors[index], 0.92028)  # only zero out elements
+
+    from sklearn.random_projection import GaussianRandomProjection
+    transformer = GaussianRandomProjection(n_components=1000, random_state=np.random.RandomState(42))
+    XX = np.vstack((X_train_vectors, X_test_vectors))
+    XX = transformer.fit_transform(XX)
+    X_train_vectors = XX[:5000, :]
+    X_test_vectors = XX[5000:, :]
+
+    print('after projection')
+    print(X_train_vectors.shape)
+    print(X_test_vectors.shape)
+    print(y_train.shape)
+    print(y_test.shape)
+
+    accs = []
+    for _ in range(5):
+        nn_model = simple_nn(1000, num_of_classes)
+        nn_model.fit(X_train_vectors, y_train, epochs=num_of_epochs, batch_size=batch_size, verbose=2, validation_split=0.1)
+        loss, accuracy = nn_model.evaluate(X_test_vectors, y_test, verbose=2)
+        accs.append(accuracy)
+    print('Final mean acc.: ', sum(accs) / 5)
+    '''
+
+    # disjoint_sets = get_feature_vector_representation(disjoint_sets, input_size, proportion_0=0.92028)
+
+    data, dict_keys = get_current_saved_results(os.path.basename(__file__)[:-3], ['acc_superposition_1000non0units_and_GRP'])
+
+    _, dict_keys_other_file = get_current_saved_results('superposition_CNN_cifar100', ['acc_superposition'])
+    dict_keys.extend(dict_keys_other_file)
+
+    plot_multiple_results(dict_keys, ['GRP to 1.000 units',
+                                      'Reference model', 'Baseline (no superposition)', 'ResNet18*'],
+                          ['tab:green', 'tab:blue'],
+                          'Epoch', 'Accuracy (%)', [10], 33, 85, show_CI=True)
+
+    input_size = 1000
+
+    num_of_runs = 0
     for i in range(num_of_runs):
         print('\n\n------\nRun #%d\n------\n\n' % (i + 1))
 
         if train_normal:
             lr_over_time = []  # re-initiate learning rate
 
-            model = simple_model(input_size, num_of_classes)
+            model = simple_nn(input_size, num_of_classes)
 
             acc_normal = normal_training(model, disjoint_sets, num_of_epochs, num_of_tasks, input_size, batch_size=batch_size)
-            data[dict_keys[1]].append(acc_normal)
+            # data[dict_keys[1]].append(acc_normal)
 
             # if not train_superposition:
             #     plot_lr(lr_over_time)
@@ -380,10 +543,12 @@ if __name__ == '__main__':
         if train_superposition:
             lr_over_time = []  # re-initiate learning rate
 
-            model = simple_model(input_size, num_of_classes)
+            model = simple_nn(input_size, num_of_classes)
 
             acc_superposition = superposition_training(model, disjoint_sets, num_of_epochs, None, num_of_classes, num_of_tasks, input_size, batch_size=batch_size)
             data[dict_keys[0]].append(acc_superposition)
+
+            # model.save('cifar-100_1CNN_data/CNN_model.h5')
 
             # if not train_normal:
             #     plot_lr(lr_over_time)

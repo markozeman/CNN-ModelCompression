@@ -39,7 +39,7 @@ class TestSuperpositionPerformanceCallback(Callback):
         self.X_test = X_test
         self.y_test = y_test
         self.context_matrices = context_matrices
-        self.model = model
+        self.model = model  # this is only a reference, not a deep copy
         self.task_index = task_index
         self.accuracies = []
 

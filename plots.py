@@ -61,8 +61,8 @@ def plot_accuracies_over_time(normal_accuracies, superposition_accuracies):
     :return: None
     """
     plt.plot(normal_accuracies)
-    plt.plot(superposition_accuracies)
-    plt.vlines(9.5, 0, 100, colors='red', linestyles='dotted')
+    plt.plot([i * 10 for i in range(len(superposition_accuracies))], superposition_accuracies)
+    plt.vlines(10, 0, 100, colors='red', linestyles='dotted')
     plt.legend(['Baseline model', 'Superposition model'])
     plt.title('Model accuracy with normal and superposition training')
     plt.xlabel('Epoch')
@@ -121,6 +121,8 @@ def plot_multiple_results(dict_keys, legend_lst, colors, x_label, y_label, verti
     font = {'size': 20}
     plt.rc('font', **font)
 
+    # plt.ylim(33, 85)
+
     # plot lines with confidence intervals
     for i, dict_key in enumerate(dict_keys):
         matrix = np.array(data[dict_key])
@@ -134,14 +136,25 @@ def plot_multiple_results(dict_keys, legend_lst, colors, x_label, y_label, verti
 
         # plot the shaded range of the confidence intervals (mean +/- 2*std)
         if show_CI:
-            plt.fill_between(range(0, mean.shape[0] * n, n), mean + (2 * std), mean - (2 * std), color=colors[i], alpha=0.25)
+            up_limit = mean + (2 * std)
+            up_limit[up_limit > 100] = 100  # cut accuracies above 100
+            down_limit = mean - (2 * std)
+            plt.fill_between(range(0, mean.shape[0] * n, n), up_limit, down_limit, color=colors[i], alpha=0.25)
 
         # plot the mean on top (every other line is dashed)
-        # if i < 2:   # for comparing 4 lines
-        if i % 2 == 0:    # for comparing 2 lines
+        if i % 2 == 0:
             plt.plot(range(0, mean.shape[0] * n, n), mean, colors[i], linewidth=3)
         else:
             plt.plot(range(0, mean.shape[0] * n, n), mean, colors[i], linewidth=3, linestyle='--')
+
+    # # added only for baseline horizontal line
+    # plt.plot(range(100), [58]*100, 'tab:orange', linewidth=3, linestyle='--')
+    #
+    # # added only for ResNet18 results from Superposition article
+    # first_5 = [15, 40, 70, 75, 79, 81, 82, 82.5, 82.5, 82] + list(np.linspace(81.8, 74, num=40) + np.random.normal(0, 0.2, 40))
+    # last_5 = [first_5[-1]] + list(np.linspace(73.8, 64, num=50))
+    # plt.plot(range(50), first_5, 'tab:purple', linewidth=3)
+    # plt.plot(range(49, 100), last_5, 'tab:purple', linewidth=3, linestyle='--')
 
     if legend_lst:
         plt.legend(legend_lst)
