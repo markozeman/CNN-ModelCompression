@@ -1,3 +1,4 @@
+import copy
 import os
 from datasets import *
 from keras.models import Sequential
@@ -28,17 +29,6 @@ def get_test_acc_for_individual_tasks(final_model, context_matrices, test_data, 
     :param num_of_classes: number of different classes/output labels
     :return: list of superposition accuracies for individual tasks
     """
-
-    # for layer in final_model.layers[1:]:  # first layer is Flatten so we skip it
-    #     curr_w_matrices = layer.get_weights()[0]
-    #     magnitude_of_layer_outputs = np.sum(curr_w_matrices, axis=1)
-    #     print('Len:', len(magnitude_of_layer_outputs))
-    #     for i, m in enumerate(magnitude_of_layer_outputs):
-    #         if i == active_neurons_at_start:
-    #             print('----------')
-    #         print(m)
-    #     print('\n\n\n\n')
-
     reverse_accuracies = []
     num_of_tasks = len(test_data)
     for i in range(num_of_tasks - 1, -1, -1):   # go from the last task to the first one
@@ -286,17 +276,6 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
     history = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, mask, batch_size,
                           validation_share=0.1, mode='superposition', context_matrices=context_matrices, task_index=0)
 
-    for layer in model.layers[2:]:
-        curr_w_matrices = layer.get_weights()[0]
-        magnitude_of_layer_outputs = np.sum(curr_w_matrices, axis=1)
-        print('Len:', len(magnitude_of_layer_outputs))
-        for i, m in enumerate(magnitude_of_layer_outputs):
-            if i == curr_active_neurons:
-                print('----------')
-            print(m)
-        print('\n\n\n')
-    print('\n\n\n\n\n\n')
-
     val_acc = np.array(history.history['val_accuracy']) * 100
     print('\nValidation accuracies: ', 'first', val_acc)
 
@@ -325,6 +304,7 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
         val_acc = np.array(history.history['val_accuracy']) * 100
         print('\nValidation accuracies: ', i, val_acc)
 
+        '''
         for layer in model.layers[2:]:
             curr_w_matrices = layer.get_weights()[0]
             magnitude_of_layer_outputs = np.sum(curr_w_matrices, axis=1)
@@ -335,6 +315,7 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
                 print(m)
             print('\n\n\n')
         print('\n\n\n\n\n\n')
+        '''
 
     return model, context_matrices, test_data_50tasks
 
@@ -378,7 +359,7 @@ def unzero_weights(model, input_size, num_of_classes, active_neurons_at_start, n
             submatrix = np.random.uniform(low=-0.001, high=0.001, size=(input_size[0] * input_size[1], neurons_added_each_task))
             curr_w_matrix[:, (curr_active_neurons - neurons_added_each_task): curr_active_neurons] = submatrix
         elif layer_index == 1:
-            saved_small_matrix = curr_w_matrix[:active_neurons_at_start, :active_neurons_at_start]
+            saved_small_matrix = copy.deepcopy(curr_w_matrix[:active_neurons_at_start, :active_neurons_at_start])
             submatrix = np.random.uniform(low=-0.001, high=0.001, size=(curr_active_neurons, curr_active_neurons))
             curr_w_matrix[:curr_active_neurons, :curr_active_neurons] = submatrix
             curr_w_matrix[:active_neurons_at_start, :active_neurons_at_start] = saved_small_matrix
@@ -399,7 +380,7 @@ if __name__ == '__main__':
     batch_size = 600
 
     active_neurons_at_start = 100
-    neurons_added_each_task = 90
+    neurons_added_each_task = 0
     assert active_neurons_at_start + ((num_of_tasks - 1) * neurons_added_each_task) <= num_of_units
 
     train_normal = False

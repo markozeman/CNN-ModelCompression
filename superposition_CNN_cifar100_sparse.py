@@ -517,8 +517,8 @@ if __name__ == '__main__':
     _, dict_keys_other_file = get_current_saved_results('superposition_CNN_cifar100', ['acc_superposition'])
     dict_keys.extend(dict_keys_other_file)
 
-    plot_multiple_results(dict_keys, ['GRP to 1.000 units',
-                                      'Reference model', 'Baseline (no superposition)', 'ResNet18*'],
+    plot_multiple_results(dict_keys, ['Superposition with harmonization ', 'Superposition without harmonization',
+                                      'Single harmonized CNN', 'ResNet18'],
                           ['tab:green', 'tab:blue'],
                           'Epoch', 'Accuracy (%)', [10], 33, 85, show_CI=True)
 

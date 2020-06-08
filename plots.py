@@ -61,7 +61,8 @@ def plot_accuracies_over_time(normal_accuracies, superposition_accuracies):
     :return: None
     """
     plt.plot(normal_accuracies)
-    plt.plot([i * 10 for i in range(len(superposition_accuracies))], superposition_accuracies)
+    plt.plot(superposition_accuracies)
+    # plt.plot([i * 10 for i in range(len(superposition_accuracies))], superposition_accuracies)
     plt.vlines(10, 0, 100, colors='red', linestyles='dotted')
     plt.legend(['Baseline model', 'Superposition model'])
     plt.title('Model accuracy with normal and superposition training')

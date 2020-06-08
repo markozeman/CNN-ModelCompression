@@ -1,3 +1,4 @@
+import copy
 import os
 
 from datasets import *
@@ -375,6 +376,8 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
         curr_active_neurons += neurons_added_each_task
         mask = get_mask(input_size, num_of_units, num_of_classes, curr_active_neurons)
 
+        unzero_weights(model, input_size, num_of_classes, active_neurons_at_start, neurons_added_each_task, curr_active_neurons)
+
         # multiply current weights with context matrices for each layer (without changing weights from bias node)
         context_multiplication(model, context_matrices, i + 1)
 
@@ -385,6 +388,19 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
 
         val_acc = np.array(history.history['val_accuracy']) * 100
         print('\nValidation accuracies: ', i, val_acc)
+
+        '''
+        for layer in model.layers[2:]:
+            curr_w_matrices = layer.get_weights()[0]
+            magnitude_of_layer_outputs = np.sum(curr_w_matrices, axis=1)
+            print('Len:', len(magnitude_of_layer_outputs))
+            for i, m in enumerate(magnitude_of_layer_outputs):
+                if i == curr_active_neurons:
+                    print('----------')
+                print(m)
+            print('\n\n\n')
+        print('\n\n\n\n\n\n')
+        '''
 
     return original_accuracies
 
@@ -408,27 +424,58 @@ def get_mask(input_size, num_of_units, num_of_classes, curr_active_neurons):
     return mask
 
 
+def unzero_weights(model, input_size, num_of_classes, active_neurons_at_start, neurons_added_each_task, curr_active_neurons):
+    """
+    Un-zero weights to small random values in places where new neurons become active.
+
+    :param model: Keras model instance
+    :param input_size: image input size in pixels
+    :param num_of_classes: number of different classes/output labels
+    :param active_neurons_at_start: number of active neurons in both hidden layers at the first task
+    :param neurons_added_each_task: number of newly activated neurons in both hidden layers for each new task
+    :param curr_active_neurons: number of currently active neurons in both hidden layers
+    :return: None (but model weights are changed)
+    """
+    for layer_index, layer in enumerate(model.layers[1:]):  # first layer is Flatten so we skip it
+        curr_w_matrix = layer.get_weights()[0]
+
+        # make random weights sub-matrix with values between -0.001 and 0.001
+        if layer_index == 0:
+            submatrix = np.random.uniform(low=-0.001, high=0.001, size=(input_size[0] * input_size[1], neurons_added_each_task))
+            curr_w_matrix[:, (curr_active_neurons - neurons_added_each_task): curr_active_neurons] = submatrix
+        elif layer_index == 1:
+            saved_small_matrix = copy.deepcopy(curr_w_matrix[:active_neurons_at_start, :active_neurons_at_start])
+            submatrix = np.random.uniform(low=-0.001, high=0.001, size=(curr_active_neurons, curr_active_neurons))
+            curr_w_matrix[:curr_active_neurons, :curr_active_neurons] = submatrix
+            curr_w_matrix[:active_neurons_at_start, :active_neurons_at_start] = saved_small_matrix
+        elif layer_index == 2:
+            submatrix = np.random.uniform(low=-0.001, high=0.001, size=(neurons_added_each_task, num_of_classes))
+            curr_w_matrix[(curr_active_neurons - neurons_added_each_task): curr_active_neurons, :] = submatrix
+
+        layer.set_weights([curr_w_matrix, layer.get_weights()[1]])
+
+
 if __name__ == '__main__':
     input_size = (28, 28)
     num_of_units = 1000     # not all units/neurons are active
     num_of_classes = 10
 
-    num_of_tasks = 20
+    num_of_tasks = 50
     num_of_epochs = 10
     batch_size = 600
 
     active_neurons_at_start = 150
-    neurons_added_each_task = 0
+    neurons_added_each_task = 17
     assert active_neurons_at_start + ((num_of_tasks - 1) * neurons_added_each_task) <= num_of_units
 
     train_normal = False
     train_superposition = True
 
-    # data, dict_keys = get_current_saved_results(os.path.basename(__file__)[:-3], ['acc_superposition_start150_increase17', 'acc_superposition_start150_increase0'])
+    data, dict_keys = get_current_saved_results(os.path.basename(__file__)[:-3], ['acc_superposition_start150_increase17_repaired'])
     #
-    # plot_multiple_results(dict_keys, ['Superposition model increasing', 'Superposition model fixed'],
+    # plot_multiple_results(dict_keys, ['Superposition model fixed', 'Superposition model increasing'],
     #                       ['tab:blue', 'tab:orange'], 'Epoch', 'Accuracy (%)',
-    #                       [i * num_of_epochs for i in range(num_of_tasks + 1)][0::10], 0, 100, show_CI=False,
+    #                       [i * num_of_epochs for i in range(num_of_tasks + 1)][0::10], 0, 100, show_CI=True,
     #                       text_strings=[str(active_neurons_at_start + (i * neurons_added_each_task)) for i in range(num_of_tasks + 1)][0::10])
 
     num_of_runs = 1
@@ -458,20 +505,20 @@ if __name__ == '__main__':
             acc_superposition = superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units,
                                                        num_of_classes, num_of_tasks, input_size, batch_size,
                                                        active_neurons_at_start, neurons_added_each_task)
-            # data[dict_keys[0]].append(acc_superposition)
+            data[dict_keys[0]].append(acc_superposition)
 
-            if not train_normal:
-                plot_lr(lr_over_time)
-                plot_accuracies_over_time(np.zeros(len(acc_superposition)), acc_superposition)
-            else:
-                plot_general(acc_normal, acc_superposition, ['Baseline model', 'Superposition model', '# Active neurons'],
-                             'Normal vs. superposition training with adding active neurons for each new task (%d neurons in each hidden layer)' % num_of_units,
-                             'epoch', 'accuracy (%)', [i * num_of_epochs for i in range(num_of_tasks)],
-                             min(acc_normal + acc_superposition) - 2, max(acc_normal + acc_superposition) + 2,
-                             text_strings=[str(active_neurons_at_start + (i * neurons_added_each_task)) for i in range(num_of_tasks)])
+            # if not train_normal:
+            #     plot_lr(lr_over_time)
+            #     plot_accuracies_over_time(np.zeros(len(acc_superposition)), acc_superposition)
+            # else:
+            #     plot_general(acc_normal, acc_superposition, ['Baseline model', 'Superposition model', '# Active neurons'],
+            #                  'Normal vs. superposition training with adding active neurons for each new task (%d neurons in each hidden layer)' % num_of_units,
+            #                  'epoch', 'accuracy (%)', [i * num_of_epochs for i in range(num_of_tasks)],
+            #                  min(acc_normal + acc_superposition) - 2, max(acc_normal + acc_superposition) + 2,
+            #                  text_strings=[str(active_neurons_at_start + (i * neurons_added_each_task)) for i in range(num_of_tasks)])
 
-        # with open('saved_data/multiple_results.json', 'w') as fp:
-        #     json.dump(data, fp, sort_keys=True, indent=4)
+        with open('saved_data/multiple_results.json', 'w') as fp:
+            json.dump(data, fp, sort_keys=True, indent=4)
 
 
 
