@@ -52,8 +52,8 @@ def get_test_acc_for_individual_tasks(final_model, context_matrices, test_data, 
         reverse_accuracies.append(accuracy * 100)
 
         # reset weights to the ones before masking
-        for layer_index, layer in enumerate(final_model.layers[1:]):  # first layer is Flatten so we skip it
-            layer.set_weights([curr_w_matrices[layer_index], curr_bias_vectors[layer_index]])
+        # for layer_index, layer in enumerate(final_model.layers[1:]):  # first layer is Flatten so we skip it
+        #     layer.set_weights([curr_w_matrices[layer_index], curr_bias_vectors[layer_index]])
 
         # unfold weights one task back
         for layer_index, layer in enumerate(final_model.layers[1:]):  # first layer is Flatten so we skip it
@@ -122,24 +122,17 @@ def simple_model(input_size, num_of_units, num_of_classes):
     return model
 
 
-def train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, mask, batch_size=32, validation_share=0.0,
-                mode='normal', context_matrices=None, task_index=None, saved_weights=None):
+def train_model(model, X_train, y_train, num_of_epochs, mask, batch_size=32, validation_share=0.0):
     """
     Train and evaluate Keras model.
 
     :param model: Keras model instance
     :param X_train: train input data
     :param y_train: train output labels
-    :param X_test: test input data
-    :param y_test: test output labels
     :param num_of_epochs: number of epochs to train the model
     :param mask: list of binary 2D numpy arrays (1 - active weight, 0 - non active weight)
     :param batch_size: batch size - number of samples per gradient update (default = 32)
     :param validation_share: share of examples to be used for validation (default = 0)
-    :param mode: string for learning mode, important for callbacks - possible values: 'normal', 'superposition'
-    :param context_matrices: multidimensional numpy array with random context (binary superposition), only used when mode = 'superposition'
-    :param task_index: index of current task, only used when mode = 'superposition'
-    :param saved_weights: parameter not used in this file
     :return: History object and 2 lists of test accuracies for every training epoch (normal, superposition)
     """
     mask_callback = ApplyMaskCallback(model, mask)
@@ -246,7 +239,7 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
                            num_of_tasks, input_size, batch_size, active_neurons_at_start, neurons_added_each_task):
     """
     Train model for 'num_of_tasks' tasks, each task is a different permutation of input images.
-    Check how accuracy for original images is changing through tasks using superposition training.
+    Check how accuracy is changing through tasks using superposition training.
 
     :param model: Keras model instance
     :param X_train: train input data
@@ -273,8 +266,7 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
     mask = get_mask(input_size, num_of_units, num_of_classes, curr_active_neurons)
 
     # first training task - original MNIST images
-    history = train_model(model, X_train, y_train, X_test, y_test, num_of_epochs, mask, batch_size,
-                          validation_share=0.1, mode='superposition', context_matrices=context_matrices, task_index=0)
+    history = train_model(model, X_train, y_train, num_of_epochs, mask, batch_size, validation_share=0.1)
 
     val_acc = np.array(history.history['val_accuracy']) * 100
     print('\nValidation accuracies: ', 'first', val_acc)
@@ -298,8 +290,7 @@ def superposition_training(model, X_train, y_train, X_test, y_test, num_of_epoch
 
         test_data_50tasks.append((permuted_X_test, y_test))   # save test set for the testing later
 
-        history = train_model(model, permuted_X_train, y_train, permuted_X_test, y_test, num_of_epochs, mask, batch_size,
-                              validation_share=0.1, mode='superposition', context_matrices=context_matrices, task_index=i + 1)
+        history = train_model(model, permuted_X_train, y_train, num_of_epochs, mask, batch_size, validation_share=0.1)
 
         val_acc = np.array(history.history['val_accuracy']) * 100
         print('\nValidation accuracies: ', i, val_acc)
@@ -375,15 +366,14 @@ if __name__ == '__main__':
     num_of_units = 1000     # not all units/neurons are active
     num_of_classes = 10
 
-    num_of_tasks = 10
+    num_of_tasks = 5
     num_of_epochs = 10
     batch_size = 600
 
-    active_neurons_at_start = 100
-    neurons_added_each_task = 0
+    active_neurons_at_start = 200
+    neurons_added_each_task = 200
     assert active_neurons_at_start + ((num_of_tasks - 1) * neurons_added_each_task) <= num_of_units
 
-    train_normal = False
     train_superposition = True
 
     # data, dict_keys = get_current_saved_results(os.path.basename(__file__)[:-3], ['acc_superposition_15tasks_start150_increase0', 'acc_superposition_15tasks_start150_increase17'])
@@ -411,18 +401,9 @@ if __name__ == '__main__':
                                                                   neurons_added_each_task, input_size, num_of_units, num_of_classes)
             # data[dict_keys[0]].append(acc_superposition)
 
-            if not train_normal:
-                # plot_lr(lr_over_time)
-                plot_accuracies_over_time(np.zeros(num_of_tasks * num_of_epochs), acc_superposition)
-            # else:
-            #     plot_general(acc_normal, acc_superposition, ['Baseline model', 'Superposition model', '# Active neurons'],
-            #                  'Normal vs. superposition training with adding active neurons for each new task (%d neurons in each hidden layer)' % num_of_units,
-            #                  'epoch', 'accuracy (%)', [i * num_of_epochs for i in range(num_of_tasks)],
-            #                  min(acc_normal + acc_superposition) - 2, max(acc_normal + acc_superposition) + 2,
-            #                  text_strings=[str(active_neurons_at_start + (i * neurons_added_each_task)) for i in range(num_of_tasks)])
+            # plot_lr(lr_over_time)
+            plot_accuracies_over_time(np.zeros(num_of_tasks * num_of_epochs), acc_superposition)
 
         # with open('saved_data/multiple_results.json', 'w') as fp:
         #     json.dump(data, fp, sort_keys=True, indent=4)
-
-
 

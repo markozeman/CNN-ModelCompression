@@ -460,7 +460,7 @@ if __name__ == '__main__':
     num_of_units = 1000     # not all units/neurons are active
     num_of_classes = 10
 
-    num_of_tasks = 50
+    num_of_tasks = 10
     num_of_epochs = 10
     batch_size = 600
 
@@ -471,14 +471,14 @@ if __name__ == '__main__':
     train_normal = False
     train_superposition = True
 
-    data, dict_keys = get_current_saved_results(os.path.basename(__file__)[:-3], ['acc_superposition_start150_increase17_repaired'])
-    #
-    # plot_multiple_results(dict_keys, ['Superposition model fixed', 'Superposition model increasing'],
-    #                       ['tab:blue', 'tab:orange'], 'Epoch', 'Accuracy (%)',
-    #                       [i * num_of_epochs for i in range(num_of_tasks + 1)][0::10], 0, 100, show_CI=True,
-    #                       text_strings=[str(active_neurons_at_start + (i * neurons_added_each_task)) for i in range(num_of_tasks + 1)][0::10])
+    data, dict_keys = get_current_saved_results(os.path.basename(__file__)[:-3], ['acc_superposition_start150_increase0_repaired', 'acc_superposition_start150_increase17_repaired'])
 
-    num_of_runs = 1
+    plot_multiple_results(dict_keys, ['Superposition model fixed', 'Superposition model increasing'],
+                          ['tab:blue', 'tab:orange'], 'Epoch', 'Accuracy (%)',
+                          [i * num_of_epochs for i in range(num_of_tasks + 1)][0::10], 0, 100, show_CI=True,
+                          text_strings=[str(active_neurons_at_start + (i * neurons_added_each_task)) for i in range(num_of_tasks + 1)][0::10])
+
+    num_of_runs = 0
     for i in range(num_of_runs):
         print('\n\n------\nRun #%d\n------\n\n' % (i + 1))
 
@@ -505,20 +505,20 @@ if __name__ == '__main__':
             acc_superposition = superposition_training(model, X_train, y_train, X_test, y_test, num_of_epochs, num_of_units,
                                                        num_of_classes, num_of_tasks, input_size, batch_size,
                                                        active_neurons_at_start, neurons_added_each_task)
-            data[dict_keys[0]].append(acc_superposition)
+            # data[dict_keys[0]].append(acc_superposition)
 
-            # if not train_normal:
-            #     plot_lr(lr_over_time)
-            #     plot_accuracies_over_time(np.zeros(len(acc_superposition)), acc_superposition)
-            # else:
-            #     plot_general(acc_normal, acc_superposition, ['Baseline model', 'Superposition model', '# Active neurons'],
-            #                  'Normal vs. superposition training with adding active neurons for each new task (%d neurons in each hidden layer)' % num_of_units,
-            #                  'epoch', 'accuracy (%)', [i * num_of_epochs for i in range(num_of_tasks)],
-            #                  min(acc_normal + acc_superposition) - 2, max(acc_normal + acc_superposition) + 2,
-            #                  text_strings=[str(active_neurons_at_start + (i * neurons_added_each_task)) for i in range(num_of_tasks)])
+            if not train_normal:
+                plot_lr(lr_over_time)
+                plot_accuracies_over_time(np.zeros(len(acc_superposition)), acc_superposition)
+            else:
+                plot_general(acc_normal, acc_superposition, ['Baseline model', 'Superposition model', '# Active neurons'],
+                             'Normal vs. superposition training with adding active neurons for each new task (%d neurons in each hidden layer)' % num_of_units,
+                             'epoch', 'accuracy (%)', [i * num_of_epochs for i in range(num_of_tasks)],
+                             min(acc_normal + acc_superposition) - 2, max(acc_normal + acc_superposition) + 2,
+                             text_strings=[str(active_neurons_at_start + (i * neurons_added_each_task)) for i in range(num_of_tasks)])
 
-        with open('saved_data/multiple_results.json', 'w') as fp:
-            json.dump(data, fp, sort_keys=True, indent=4)
+        # with open('saved_data/multiple_results.json', 'w') as fp:
+        #     json.dump(data, fp, sort_keys=True, indent=4)
 
 
 
